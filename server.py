@@ -14,13 +14,28 @@ BookHaven 3D — единый сервер для разработки.
 
 import argparse
 import json
+import os
+import re
 import threading
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 DATA_FILE = ROOT / 'data' / 'state.json'
 BOOKS_DIR = ROOT / 'books'
+
+QUIET = False  # --quiet отключает логирование
+
+
+def now_str():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def log(msg):
+    """Единая точка вывода логов в терминал."""
+    if not QUIET:
+        print(f'[{now_str()}] {msg}', flush=True)
 
 
 def ensure_store():
@@ -286,8 +301,13 @@ class APIHandler(BaseHTTPRequestHandler):
                     }
                 books.append(meta)
             except Exception as e:
-                print(f"Error parsing book file {item.name}: {e}")
+                log(f'ERROR GET /books: не удалось разобрать книгу {item.name}: {e}')
 
+        # Диагностика: имена с суффиксом « (N)» — вероятные дубликаты
+        dup_ids = [b['id'] for b in books if re.search(r' \(\d+\)$', b['id'])]
+        if dup_ids:
+            log(f'WARN GET /books: возможные дубликаты книг: {", ".join(dup_ids)}')
+        log(f'GET /books: найдено книг — {len(books)}')
         self._send_json({'books': books})
 
     def _get_book_meta(self, book_id):
@@ -331,10 +351,23 @@ class APIHandler(BaseHTTPRequestHandler):
 
         # Имя файла = оригинальное имя книги (без потери), при конфликте — суффикс
         original_name = book.get('originalName') or f"{book.get('title', 'book')}{ext}"
+
+        # Запрос без originalName — подозрительно: такую книгу могла отправить
+        # миграция из state.json, а имя файла построено из title → возможный дубликат
+        if not book.get('originalName'):
+            log(f'WARN POST /books: запрос БЕЗ originalName, имя «{original_name}» построено из title — возможен дубликат!')
+
         if not original_name.lower().endswith(ext):
             original_name += ext
 
         content_file, stem = self._unique_file(BOOKS_DIR, original_name)
+
+        # Логируем конфликт имён — так видно момент создания дубликата
+        ip = self.client_address[0] if self.client_address else '?'
+        if content_file.name != original_name:
+            log(f'WARN POST /books {ip}: имя «{original_name}» уже занято — создан дубликат «{content_file.name}»')
+        else:
+            log(f'POST /books {ip}: сохраняю «{content_file.name}»')
 
         # Сохраняем контент прямо в books/ (без подпапок)
         if format_ == 'fb2' and book.get('fb2_content'):
@@ -451,6 +484,8 @@ class APIHandler(BaseHTTPRequestHandler):
         sidecar = BOOKS_DIR / f"{book_id}.meta.json"
         if sidecar.exists():
             sidecar.unlink()
+        ip = self.client_address[0] if self.client_address else '?'
+        log(f'DELETE /books {ip}: удалена книга «{book_id}» ({content_file.name})')
         self._send_json({'ok': True})
 
     def _send_json(self, data, status=200):
@@ -464,7 +499,15 @@ class APIHandler(BaseHTTPRequestHandler):
             pass  # Клиент уже закрыл соединение — отвечать некому
 
     def log_message(self, format, *args):
-        pass  # Тихий режим
+        """Печатаем каждый запрос к API в терминал (метод, путь, код, IP)."""
+        if QUIET:
+            return
+        ip = self.client_address[0] if self.client_address else '?'
+        try:
+            line = format % args if args else format
+        except Exception:
+            line = format
+        print(f'[{now_str()}] {ip} {line}', flush=True)
 
 
 class StaticHandler(SimpleHTTPRequestHandler):
@@ -482,7 +525,20 @@ class StaticHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format, *args):
-        pass  # Тихий режим
+        # Статика шумная — логируем только ошибки (404 и т.п.)
+        if QUIET:
+            return
+        try:
+            status = int(args[1]) if len(args) > 1 else 0
+        except Exception:
+            status = 0
+        if status >= 400:
+            ip = self.client_address[0] if self.client_address else '?'
+            try:
+                line = format % args if args else format
+            except Exception:
+                line = format
+            print(f'[{now_str()}] {ip} {line}', flush=True)
 
 
 def run_server(handler_class, port, name):
@@ -504,7 +560,7 @@ def run_server(handler_class, port, name):
     except Exception:
         pass
 
-    print(f'  {name}: http://{local_ip}:{port}  (локально: http://127.0.0.1:{port})')
+    log(f'  {name}: http://{local_ip}:{port}  (локально: http://127.0.0.1:{port})')
     return server
 
 
@@ -512,13 +568,17 @@ def main():
     parser = argparse.ArgumentParser(description='BookHaven 3D — сервер разработки')
     parser.add_argument('--static', action='store_true', help='Только статический сервер (8080)')
     parser.add_argument('--api', action='store_true', help='Только API-сервер (8001)')
+    parser.add_argument('--quiet', action='store_true', help='Не выводить логи запросов в терминал')
     args = parser.parse_args()
+
+    global QUIET
+    QUIET = args.quiet
 
     # Если не указаны флаги — запускаем оба
     run_static = args.static or not args.api
     run_api = args.api or not args.static
 
-    print('BookHaven 3D — запуск серверов...')
+    log(f'BookHaven 3D — запуск серверов (pid {os.getpid()})')
     servers = []
 
     if run_static:
@@ -527,17 +587,17 @@ def main():
     if run_api:
         servers.append(run_server(APIHandler, 8001, 'API'))
 
-    print('\nГотово. Нажмите Ctrl+C для остановки.\n')
+    log('Готово. Нажмите Ctrl+C для остановки.')
 
     try:
         # Держим главный поток живым
         while True:
             threading.Event().wait(1)
     except KeyboardInterrupt:
-        print('\nОстановка серверов...')
+        log('Остановка серверов...')
         for s in servers:
             s.shutdown()
-        print('Готово.')
+        log('Готово.')
 
 
 if __name__ == '__main__':

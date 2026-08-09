@@ -57,12 +57,15 @@ export async function saveState(state) {
 
 export async function loadStateFromServer() {
   try {
-    const res = await fetchWithTimeout(SERVER_URL, {}, 700);
+    // Таймаут 3000мс: на удалённом сервере 700мс мало, и это приводило
+    // к ложной «пустой» библиотеке и запуску миграции с дубликатами
+    const res = await fetchWithTimeout(SERVER_URL, {}, 3000);
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.books) {
       localStorage.setItem(LS_KEY, JSON.stringify(data));
     }
+    console.log(`[storage] Состояние с сервера (state.json): книг — ${data?.books?.length ?? 0}`);
     return data;
   } catch {
     return null;
@@ -71,11 +74,17 @@ export async function loadStateFromServer() {
 
 export async function loadBooksFromServer() {
   try {
-    const res = await fetchWithTimeout(`${SERVER_URL}/books`, {}, 700);
+    // Таймаут 5000мс: 700мс на удалённом сервере обрывали запрос,
+    // возвращался null, и main.js запускал миграцию из state.json,
+    // которая создавала дубликаты уже существующих книг
+    const res = await fetchWithTimeout(`${SERVER_URL}/books`, {}, 5000);
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.books || [];
-  } catch {
+    const books = data?.books || [];
+    console.log(`[storage] Книг на сервере (папка books/): ${books.length}`);
+    return books;
+  } catch (err) {
+    console.warn('[storage] Не удалось получить список книг с сервера:', err);
     return null;
   }
 }
@@ -98,9 +107,15 @@ export async function saveBookToServer(book) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book),
     }, 60000);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
+    if (!res.ok) {
+      console.warn(`[storage] Сервер отклонил сохранение книги (HTTP ${res.status})`);
+      return null;
+    }
+    const data = await res.json();
+    console.log(`[storage] Книга сохранена на сервер: id="${data.id}", файл="${data.fileName}"`);
+    return data;
+  } catch (err) {
+    console.warn('[storage] Ошибка сети/таймаут при сохранении книги — сервер мог успеть создать дубликат:', err);
     return null;
   }
 }

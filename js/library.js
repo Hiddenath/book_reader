@@ -3,7 +3,7 @@
    Метаданные (название, автор, прогресс, закладки) — в meta.json книги. */
 
 import { parseBook } from './parsers.js?v=20260806d';
-import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260806d';
+import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260810b';
 
 // Палитры обложек: выбираются по порядковому номеру книги в библиотеке
 const COVER_PALETTES = [
@@ -114,8 +114,12 @@ export class Library {
       // Сохраняем на сервер (копируем в папку books/ под исходным именем)
       const result = await saveBookToServer(book);
       if (!result) {
-        console.warn('Не удалось сохранить книгу на сервер, работаем локально');
+        console.warn('[library] Не удалось сохранить книгу на сервер, работаем локально');
       } else {
+        console.log(`[library] Книга сохранена: id="${result.id}", файл="${result.fileName}"`);
+        if (result.fileName && result.fileName !== file.name) {
+          console.warn(`[library] ВНИМАНИЕ: файл сохранён под другим именем «${result.fileName}» вместо «${file.name}» — на сервере мог появиться дубликат`);
+        }
         // Сервер вернул id (имя файла) и метаданные — используем их
         book.id = result.id || book.id;
         if (result.meta) {

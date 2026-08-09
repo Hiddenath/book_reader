@@ -1,10 +1,10 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
 import { Reader } from './reader.js?v=20260809b';
-import { Library } from './library.js?v=20260806d';
+import { Library } from './library.js?v=20260810b';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
-import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260806d';
+import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260810b';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
 
 const State = {
@@ -456,23 +456,56 @@ async function init() {
   // Загружаем книги с сервера (из папки books/)
   let serverBooks = await loadBooksFromServer();
 
-  // Миграция: если папка books/ пуста, но есть книги в state.json — копируем их
-  if (!serverBooks?.length && initialState?.books?.length) {
-    // Загружаем полные данные из localStorage (там есть текст)
-    const fullState = loadState();
-    const booksToMigrate = fullState?.books || initialState.books;
-    for (const b of booksToMigrate) {
-      // Если текста нет — используем демо-текст
-      const bookWithText = {
-        ...b,
-        text: b.text || DEMO_TEXT,
-      };
-      await saveBookToServer(bookWithText);
-    }
+  // Сеть могла подвести (таймаут/обрыв) — при этом возвращается null.
+  // Пробуем ещё раз: иначе миграция ниже решит, что books/ пуста,
+  // и скопирует книги из state.json заново → дубликаты.
+  if (serverBooks === null) {
+    console.warn('[main] Сервер не ответил со списком книг — повторяю запрос через 1.5с...');
+    await new Promise((r) => setTimeout(r, 1500));
     serverBooks = await loadBooksFromServer();
   }
 
   if (serverBooks?.length) {
+    console.log(`[main] При старте книг на сервере: ${serverBooks.length}`);
+  } else if (serverBooks === null) {
+    // Сервер так и не ответил — НЕ мигрируем (это создало бы дубликаты)
+    console.warn('[main] Сервер недоступен — миграция из state.json отменена (books/ может быть не пуста!)');
+    serverBooks = [];
+  } else if (initialState?.books?.length) {
+    // Миграция ТОЛЬКО когда сервер ТОЧНО ответил, что books/ пуста
+    console.log(`[main] Миграция: books/ пуста, копирую ${initialState.books.length} книг(и) из state.json...`);
+    for (const b of initialState.books) {
+      // Сохраняем под ИСХОДНЫМ именем файла (id книги = имя файла без расширения).
+      // Без originalName сервер назвал бы файл по title → «Республика Ночь.fb2»
+      // вместо «Зотов - Республика Ночь.fb2» → дубликат.
+      const ext = b.format === 'fb2' ? '.fb2' : b.format === 'epub' ? '.epub' : '.txt';
+      const baseName = b.id || b.title || 'book';
+      const originalName = baseName.toLowerCase().endsWith(ext) ? baseName : baseName + ext;
+      const bookWithText = {
+        ...b,
+        originalName,
+        // Если текста нет — используем демо-текст
+        text: b.text || DEMO_TEXT,
+      };
+      console.log(`[main] Миграция: сохраняю «${originalName}»`);
+      await saveBookToServer(bookWithText);
+    }
+    serverBooks = await loadBooksFromServer();
+    console.log(`[main] После миграции книг на сервере: ${serverBooks?.length ?? 'нет ответа'}`);
+  }
+
+  if (serverBooks?.length) {
+    // Диагностика: книги с одинаковым названием — возможные дубликаты
+    const byTitle = new Map();
+    for (const b of serverBooks) {
+      const key = (b.title || '').trim().toLowerCase();
+      if (!key) continue;
+      if (byTitle.has(key)) {
+        console.warn(`[main] ВНИМАНИЕ: дубликат по названию «${b.title}» (id: "${byTitle.get(key)}" и "${b.id}")`);
+      } else {
+        byTitle.set(key, b.id);
+      }
+    }
     for (const b of serverBooks) {
       library.addBook(b);
     }

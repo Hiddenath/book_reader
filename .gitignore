@@ -1,0 +1,8 @@
+/.DS_Store
+/.архив
+
+# Книги: содержимое не храним, но папку держим в репозитории (через .gitkeep)
+books/*
+!books/.gitkeep
+data/*
+!data/.gitkeep

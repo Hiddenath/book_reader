@@ -1,0 +1,207 @@
+/* ===== BookHaven 3D — библиотека (grid книг) ===== */
+
+.library {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  padding: 80px 6vw 120px;
+  background: var(--bg);
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s var(--ease-out);
+}
+
+.library.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.library-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 40px;
+}
+
+.library-title {
+  font-family: var(--font-serif);
+  font-size: clamp(28px, 4vw, 44px);
+  color: var(--text);
+  margin: 0;
+}
+
+.library-count {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+/* --- Сетка книг --- */
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 32px 28px;
+}
+
+.book-card {
+  cursor: pointer;
+  transition: transform 0.3s var(--ease-out);
+  position: relative;
+}
+
+.book-card:hover {
+  transform: translateY(-4px);
+}
+
+.book-delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 18px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 10;
+}
+
+.book-card:hover .book-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.book-delete:hover {
+  background: #c62828;
+  transform: scale(1.1);
+}
+
+.book-cover {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px 12px 12px 6px;
+  background: linear-gradient(135deg, var(--cover-a), var(--cover-b));
+  box-shadow: 0 8px 24px var(--shadow-book);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 16px;
+  transition: box-shadow 0.3s var(--ease-out);
+}
+
+.book-card:hover .book-cover {
+  box-shadow: 0 16px 40px var(--shadow-book);
+}
+
+/* Корешок на обложке */
+.book-cover::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: linear-gradient(to right, rgba(0,0,0,0.25), transparent);
+}
+
+.book-cover-title {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.3;
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.book-cover-author {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.book-meta {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.book-meta-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-meta-progress {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* --- FAB «добавить книгу» --- */
+.fab {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 24px var(--shadow-book);
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  z-index: 50;
+}
+
+.fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 12px 32px var(--shadow-book);
+}
+
+/* --- Drag&drop оверлей --- */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 3px dashed var(--accent);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-sans);
+  font-size: 22px;
+  color: var(--accent);
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.drop-overlay.active {
+  opacity: 1;
+}
+
+/* --- Адаптивность --- */
+@media (max-width: 768px) {
+  .library { padding: 60px 5vw 100px; }
+  .book-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 20px 16px; }
+  .fab { right: 20px; bottom: 20px; width: 52px; height: 52px; font-size: 26px; }
+}

@@ -1,0 +1,324 @@
+/* ===== BookHaven 3D — глобальные стили и темы ===== */
+
+:root {
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+  --toolbar-h: 56px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* --- Тема: Бумага --- */
+:root, [data-theme="paper"] {
+  --bg: #e8e2d4;
+  --bg-texture: radial-gradient(ellipse at 50% 40%, #efe9db 0%, #e0d8c6 70%, #d5ccb8 100%);
+  --page-bg: #fbf8f0;
+  --page-edge: #efe9db;
+  --text: #2e2a24;
+  --text-dim: #8a8172;
+  --accent: #a06b32;
+  --panel-bg: rgba(251, 248, 240, 0.92);
+  --shadow-book: rgba(60, 48, 30, 0.35);
+  --shadow-page: rgba(60, 48, 30, 0.18);
+}
+
+/* --- Тема: Сепия --- */
+[data-theme="sepia"] {
+  --bg: #d9c9a3;
+  --bg-texture: radial-gradient(ellipse at 50% 40%, #e6d7b4 0%, #d3c096 70%, #c2ad7f 100%);
+  --page-bg: #f6ead0;
+  --page-edge: #ecdfc2;
+  --text: #4a3520;
+  --text-dim: #9a7f5c;
+  --accent: #8a5a24;
+  --panel-bg: rgba(246, 234, 208, 0.92);
+  --shadow-book: rgba(70, 50, 20, 0.4);
+  --shadow-page: rgba(70, 50, 20, 0.2);
+}
+
+/* --- Тема: Ночной --- */
+[data-theme="night"] {
+  --bg: #101318;
+  --bg-texture: radial-gradient(ellipse at 50% 40%, #181c23 0%, #0e1116 70%, #080a0d 100%);
+  --page-bg: #1e232c;
+  --page-edge: #262c37;
+  --text: #d6dae2;
+  --text-dim: #6b7280;
+  --accent: #7aa2d8;
+  --panel-bg: rgba(24, 28, 35, 0.94);
+  --shadow-book: rgba(0, 0, 0, 0.6);
+  --shadow-page: rgba(0, 0, 0, 0.4);
+}
+
+/* --- Тема: Лес --- */
+[data-theme="forest"] {
+  --bg: #ccd6bd;
+  --bg-texture: radial-gradient(ellipse at 50% 40%, #dde6cf 0%, #c4d0b0 70%, #aebb97 100%);
+  --page-bg: #eef3e2;
+  --page-edge: #e2ead2;
+  --text: #26331f;
+  --text-dim: #6f7d5e;
+  --accent: #4d7a3a;
+  --panel-bg: rgba(238, 243, 226, 0.92);
+  --shadow-book: rgba(40, 60, 30, 0.35);
+  --shadow-page: rgba(40, 60, 30, 0.18);
+}
+
+/* --- Тема: Небо --- */
+[data-theme="sky"] {
+  --bg: #c3d8e8;
+  --bg-texture: radial-gradient(ellipse at 50% 40%, #d6e6f2 0%, #b8cfe2 70%, #a2bcd4 100%);
+  --page-bg: #f2f8fc;
+  --page-edge: #e4eef6;
+  --text: #1f2c3a;
+  --text-dim: #64798c;
+  --accent: #3a6ea8;
+  --panel-bg: rgba(242, 248, 252, 0.92);
+  --shadow-book: rgba(30, 50, 70, 0.35);
+  --shadow-page: rgba(30, 50, 70, 0.18);
+}
+
+/* ===== База ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  background-image: var(--bg-texture);
+  color: var(--text);
+  transition: background-color 0.4s, color 0.4s;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ===== Нижняя панель ===== */
+.toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(20px);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: var(--toolbar-h);
+  padding: 0 22px;
+  background: var(--panel-bg);
+  border-radius: 28px;
+  box-shadow: 0 8px 30px var(--shadow-page);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); /* Safari ≤ 17 */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out);
+  z-index: 100;
+}
+
+.toolbar.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.tb-btn {
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.tb-btn:hover {
+  background: var(--shadow-page);
+  transform: scale(1.08);
+}
+
+.tb-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 180px;
+}
+
+.progress-line {
+  width: 100%;
+  height: 3px;
+  background: var(--shadow-page);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s var(--ease-out);
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Индикатор загрузки ===== */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--bg);
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s var(--ease-out);
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--shadow-page);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-text {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== Боковые зоны навигации ===== */
+.nav-zone {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 12%;
+  z-index: 20;
+  cursor: pointer;
+}
+
+.nav-left  { left: 0; }
+.nav-right { right: 0; }
+
+/* ===== Панель настроек ===== */
+.settings-panel {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%) translateY(105%);
+  width: min(480px, 92vw);
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px); /* Safari ≤ 17 */
+  border-radius: 20px 20px 0 0;
+  padding: 42px 28px 32px;
+  box-shadow: 0 -8px 40px var(--shadow-book);
+  transition: transform 0.35s var(--ease-out);
+  z-index: 110;
+  overflow: visible;
+}
+
+.settings-panel.open {
+  transform: translateX(-50%) translateY(0);
+}
+
+.settings-panel-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.settings-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--text-dim);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.settings-close:hover {
+  background: var(--shadow-page);
+  transform: scale(1.06);
+}
+
+.settings-section { margin-bottom: 20px; }
+.settings-section:last-child { margin-bottom: 0; }
+
+.settings-section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.settings-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.settings-section input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.theme-picker {
+  display: flex;
+  gap: 14px;
+}
+
+.theme-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--dot);
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12), 0 2px 6px var(--shadow-page);
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.theme-dot:hover { transform: scale(1.12); }
+
+.theme-dot.active {
+  border-color: var(--accent);
+  transform: scale(1.12);
+}

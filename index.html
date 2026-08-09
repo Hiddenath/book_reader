@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="paper">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BookHaven 3D</title>
+  <link rel="stylesheet" href="css/main.css?v=20260809a">
+  <link rel="stylesheet" href="css/reader.css?v=20260809i">
+  <link rel="stylesheet" href="css/library.css?v=20260809c">
+</head>
+<body>
+  <!-- Библиотека -->
+  <section class="library" id="library">
+    <div class="library-header">
+      <h1 class="library-title">Библиотека</h1>
+      <span class="library-count" id="libraryCount">0 книг</span>
+    </div>
+    <div class="book-grid" id="bookGrid"></div>
+  </section>
+
+  <!-- FAB добавления книги -->
+  <button class="fab" id="fabAdd" title="Добавить книгу">+</button>
+  <input type="file" id="fileInput" accept=".txt,.epub,.fb2" multiple hidden>
+
+  <!-- Drag&drop оверлей -->
+  <div class="drop-overlay" id="dropOverlay">Отпустите TXT, EPUB или FB2-файл, чтобы добавить книгу</div>
+
+  <!-- Индикатор загрузки книги -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Открываю книгу…</div>
+  </div>
+
+  <!-- 3D-сцена читалки -->
+  <main class="scene" id="scene">
+    <div class="book" id="book">
+      <!-- Статичные страницы под разворотом -->
+      <div class="page page-under page-left" id="pageUnderLeft">
+        <div class="page-content" id="contentUnderLeft"></div>
+      </div>
+      <div class="page page-under page-right" id="pageUnderRight">
+        <div class="page-content" id="contentUnderRight"></div>
+      </div>
+
+      <!-- Перелистываемые листы (создаются динамически) -->
+      <div id="flipLayer"></div>
+
+      <!-- Маркер закладки на краю страницы -->
+      <div class="bookmark-marker" id="bookmarkMarker"></div>
+    </div>
+  </main>
+
+  <!-- Панель закладок -->
+  <aside class="bookmarks-panel" id="bookmarksPanel">
+    <div class="bookmarks-header">
+      <h3>Закладки</h3>
+      <button class="bookmarks-close" id="bookmarksClose" title="Закрыть">×</button>
+    </div>
+    <div class="bookmarks-list" id="bookmarksList"></div>
+    <button class="bookmarks-add" id="btnAddBookmark">+ Закладка на этой странице</button>
+  </aside>
+
+  <!-- Панель оглавления -->
+  <aside class="bookmarks-panel" id="tocPanel">
+    <div class="bookmarks-header">
+      <h3>Оглавление</h3>
+      <button class="bookmarks-close" id="tocClose" title="Закрыть">×</button>
+    </div>
+    <div class="bookmarks-list" id="tocList"></div>
+  </aside>
+
+  <!-- Нижняя панель управления -->
+  <footer class="toolbar" id="toolbar">
+    <button class="tb-btn" id="btnLibrary" title="Библиотека">←</button>
+    <div class="tb-progress">
+      <div class="progress-line"><div class="progress-fill" id="progressFill"></div></div>
+      <span class="progress-text" id="progressText">стр. 1 / 1</span>
+    </div>
+    <button class="tb-btn" id="btnToc" title="Оглавление">☰</button>
+    <button class="tb-btn" id="btnBookmark" title="Закладки">🔖</button>
+    <button class="tb-btn" id="btnSettings" title="Настройки">⚙</button>
+  </footer>
+
+  <!-- Боковые зоны листания -->
+  <div class="nav-zone nav-left" id="navLeft"></div>
+  <div class="nav-zone nav-right" id="navRight"></div>
+
+  <!-- Панель настроек (slide-up) -->
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-panel-header">
+      <button class="settings-close" id="settingsClose" title="Скрыть панель">×</button>
+    </div>
+    <div class="settings-section">
+      <label>Размер шрифта
+        <input type="range" id="setFontSize" min="14" max="30" step="1" value="18">
+      </label>
+      <label>Межстрочный интервал
+        <input type="range" id="setLineHeight" min="1.0" max="2.5" step="0.1" value="1.6">
+      </label>
+    </div>
+    <div class="settings-section">
+      <h3>Тема</h3>
+      <div class="theme-picker" id="themePicker">
+        <button class="theme-dot" data-theme-name="paper" style="--dot:#f7f3ea" title="Бумага"></button>
+        <button class="theme-dot" data-theme-name="sepia" style="--dot:#f3e5c8" title="Сепия"></button>
+        <button class="theme-dot" data-theme-name="night" style="--dot:#1a1d23" title="Ночной"></button>
+        <button class="theme-dot" data-theme-name="forest" style="--dot:#e4ecda" title="Лес"></button>
+        <button class="theme-dot" data-theme-name="sky" style="--dot:#dcebf5" title="Небо"></button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h3>Отступы</h3>
+      <label>Горизонтальные отступы
+        <input type="range" id="setMargins" min="0" max="120" step="10" value="60">
+      </label>
+    </div>
+  </div>
+
+  <!-- Сторонние библиотеки (скачаны в /lib/): JSZip нужен для epub.js -->
+  <script src="lib/jszip.min.js"></script>
+  <script src="lib/epub.js"></script>
+
+  <!-- Точка входа приложения -->
+  <script type="module" src="js/main.js?v=20260809c"></script>
+</body>
+</html>

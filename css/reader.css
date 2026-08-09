@@ -1,0 +1,531 @@
+/* ===== BookHaven 3D — 3D-сцена читалки (CSS 3D) ===== */
+
+.scene {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  perspective: 2200px;
+  perspective-origin: 50% 42%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scene > * {
+  pointer-events: auto;
+}
+
+/* --- Книга --- */
+.book {
+  --page-w: min(38vw, 520px);
+  --page-h: min(78vh, 720px);
+
+  position: relative;
+  width: calc(var(--page-w) * 2);
+  height: var(--page-h);
+  transform-style: preserve-3d;
+  transform: rotateX(7deg);
+  transition: transform 0.6s var(--ease-out);
+
+  /* Мягкая тень книги на «столе».
+     ВАЖНО: filter здесь нельзя — он схлопывает preserve-3d у потомков,
+     из-за чего обратная сторона листа растеризуется плоско (зеркальный текст). */
+  box-shadow: 0 30px 40px var(--shadow-book);
+  border-radius: 14px;
+}
+
+.scene:hover .book { transform: rotateX(4deg); }
+
+/* --- Одностраничный режим (вытянутые экраны) --- */
+/* Класс ставится JS по matchMedia: узкие или портретные окна.
+   Текст показывается только на правой странице,
+   левая остаётся видимой пустой подложкой (лист не «появляется из ниоткуда»).
+   Книга сдвинута влево (translateX -25%), чтобы правая страница была по центру.
+   Страница максимально использует площадь: 5% отступы от краёв экрана. */
+.book.single-page {
+  --page-w: min(85vw, 770px);
+  --page-h: 90vh;
+  width: calc(var(--page-w) * 2);
+  height: var(--page-h);
+  transform: translateX(-45%) rotateX(3deg);
+}
+
+.scene:hover .book.single-page {
+  transform: translateX(-45%) rotateX(2deg);
+}
+
+/* На очень широких экранах ограничиваем ширину страницы */
+@media (min-width: 1400px) {
+  .book.single-page { --page-w: min(34vw, 460px); }
+}
+
+/* Левая страница — пустая подложка (контент скрыт) */
+.book.single-page .page-left .page-content { visibility: hidden; }
+
+.book.single-page .page-right { border-radius: 10px; }
+
+/* В одностраничном режиме текст не должен подходить к нижней грани:
+   книга наклонена (rotateX) и нижний край ближе к зрителю,
+   увеличенный нижний отступ убирает эффект «текст выходит за грань».
+   То же для анимируемого листа (flip-face использует .page-content). */
+.book.single-page .page-content {
+  padding-top: 40px;
+  padding-bottom: 90px;
+}
+
+/* Лист покрывает правую страницу */
+.book.single-page .flip-sheet {
+  left: var(--page-w);
+  border-radius: 10px;
+}
+
+/* Тени в одностраничном режиме */
+.book.single-page .cast-shadow.on-left { display: none; }
+.book.single-page .cast-shadow.on-right { border-radius: 10px; }
+
+/* --- Страницы --- */
+.page {
+  position: absolute;
+  top: 0;
+  width: var(--page-w);
+  height: 100%;
+  background: var(--page-bg);
+  overflow: hidden;
+  backface-visibility: hidden;
+  transition: background-color 0.4s;
+}
+
+.page-left {
+  left: 0;
+  border-radius: 14px 3px 3px 14px;
+  /* Корешок и срез (торец) нарисованы градиентами прямо на фоне страницы:
+     они — часть страницы, поэтому двигаются вместе с ней и не выступают
+     за габариты книги. */
+  background:
+    /* тень корешка у внутреннего (правого) края */
+    linear-gradient(to left, var(--shadow-book) 0%, transparent 7px),
+    /* срез (торец блока) у внешнего (левого) края */
+    repeating-linear-gradient(
+      to bottom,
+      var(--page-edge) 0px,
+      var(--page-edge) 2px,
+      var(--shadow-page) 3px
+    ) 0 2px / 5px calc(100% - 4px) no-repeat,
+    var(--page-bg);
+  box-shadow: inset -18px 0 30px -18px var(--shadow-book);
+}
+
+.page-right {
+  right: 0;
+  border-radius: 3px 14px 14px 3px;
+  background:
+    /* тень корешка у внутреннего (левого) края */
+    linear-gradient(to right, var(--shadow-book) 0%, transparent 7px),
+    /* срез (торец блока) у внешнего (правого) края */
+    repeating-linear-gradient(
+      to bottom,
+      var(--page-edge) 0px,
+      var(--page-edge) 2px,
+      var(--shadow-page) 3px
+    ) right 0 top 2px / 5px calc(100% - 4px) no-repeat,
+    var(--page-bg);
+  box-shadow: inset 18px 0 30px -18px var(--shadow-book);
+}
+
+/* --- Текстовый контент страницы --- */
+.page-content {
+  position: absolute;
+  inset: 0;
+  padding: 48px var(--margins, 60px);
+  font-family: var(--font-serif);
+  font-size: var(--font-size, 18px);
+  line-height: var(--line-height, 1.6);
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto; /* Safari ≤ 16 */
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none; /* Safari ≤ 16 */
+}
+
+.page-content p {
+  /* margin-top убран намеренно: иначе браузерный 1em давал
+     двойной отступ и ломал расчёт высоты в пагинаторе */
+  margin: 0 0 0.9em;
+}
+
+.page-content p:first-child::first-letter {
+  font-size: 1.15em;
+  color: var(--accent);
+}
+
+/* Структурные блоки текста (заголовки, эпиграфы, стихи) */
+.page-content h2,
+.page-content h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 0.9em;
+  color: var(--text);
+}
+
+.page-content h2 { font-size: 1.3em; }
+.page-content h3 { font-size: 1.1em; }
+
+.page-content blockquote {
+  margin: 1.2em 0 1.4em;
+  padding: 0 0 0 1.2em;
+  border-left: 3px solid var(--accent);
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.page-content pre.poem {
+  white-space: pre-wrap;
+  font-family: var(--font-serif);
+  font-size: 0.95em;
+  line-height: 1.5;
+  margin-bottom: 0.9em;
+  color: var(--text);
+}
+
+/* Корешок и срезы страниц рисуются градиентами прямо на страницах
+   (см. .page-left / .page-right выше): так они прилегают к книге,
+   двигаются вместе с ней и не выступают за её габариты.
+   У перелистываемого листа (.flip-front / .flip-back) — только тень
+   корешка (срез намеренно убран, см. ниже). */
+
+/* ===== Перелистываемый лист ===== */
+/* Слой листов обязан растягиваться на всю книгу: без position+inset
+   у #flipLayer высота = 0, и .flip-sheet (height: 100%) схлопывался —
+   анимация шла «в никуда» (не видно ни в Safari, ни в Chrome). */
+#flipLayer {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  /* preserve-3d нужен для WebKit/Safari: иначе 3D-цепочка
+     .scene(perspective) → .book(preserve-3d) → #flipLayer(flat) обрывается,
+     лист рендерится плоско, backface-visibility не прячет оборот
+     (зеркальный текст, ломаная анимация). Также даёт эффект «страница
+     вылетает вперёд, приближаясь к экрану». */
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d; /* Safari ≤ 8 */
+}
+
+#flipLayer .flip-sheet {
+  pointer-events: auto;
+}
+
+.flip-sheet {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--page-w);
+  height: 100%;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d; /* Safari ≤ 8 */
+  transform-origin: left center;
+  will-change: transform;
+  z-index: 10;
+}
+
+.flip-face {
+  position: absolute;
+  inset: 0;
+  background: var(--page-bg);
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+  transition: background-color 0.4s;
+}
+
+.flip-front {
+  background:
+    /* тень корешка у левого края — здесь проходит ось вращения листа */
+    linear-gradient(to right, var(--shadow-book) 0%, transparent 7px),
+    var(--page-bg);
+  border-radius: 3px 14px 14px 3px;
+  box-shadow: inset 18px 0 30px -18px var(--shadow-book);
+}
+
+.flip-back {
+  background:
+    /* грань развёрнута (rotateY 180°), поэтому градиент в локальных
+       координатах идёт справа (to left) — визуально тень корешка
+       остаётся у левого края, у оси вращения */
+    linear-gradient(to left, var(--shadow-book) 0%, transparent 7px),
+    var(--page-bg);
+  transform: rotateY(180deg);
+  border-radius: 14px 3px 3px 14px;
+  box-shadow: inset -18px 0 30px -18px var(--shadow-book);
+}
+
+/* Динамические тени (прозрачность управляется из JS) */
+.flip-shade-front,
+.flip-shade-back {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.flip-shade-front {
+  background: linear-gradient(to left, rgba(0,0,0,0.45) 0%, transparent 55%);
+  border-radius: inherit;
+}
+
+.flip-shade-back {
+  background: linear-gradient(to right, rgba(0,0,0,0.45) 0%, transparent 55%);
+  border-radius: inherit;
+}
+
+/* Тень, падающая на лежащую страницу */
+.cast-shadow {
+  position: absolute;
+  top: 0;
+  width: var(--page-w);
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+}
+
+.cast-shadow.on-left {
+  left: 0;
+  background: linear-gradient(to left, rgba(0,0,0,0.35) 0%, transparent 70%);
+  border-radius: 14px 3px 3px 14px;
+}
+
+.cast-shadow.on-right {
+  right: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.35) 0%, transparent 70%);
+  border-radius: 3px 14px 14px 3px;
+}
+
+/* --- Режим погружения --- */
+body.immersive .toolbar,
+body.immersive .settings-panel {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ===== Маркер закладки на краю книги ===== */
+.bookmark-marker {
+  position: absolute;
+  top: -6px;
+  right: 24px;
+  width: 22px;
+  height: 34px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out);
+  pointer-events: none;
+  z-index: 15;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+}
+
+.bookmark-marker.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ===== Панель закладок ===== */
+.bookmarks-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 85vw);
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px); /* Safari ≤ 17 */
+  box-shadow: -8px 0 40px var(--shadow-book);
+  transform: translateX(105%);
+  transition: transform 0.35s var(--ease-out);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.bookmarks-panel.open {
+  transform: translateX(0);
+}
+
+.bookmarks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.bookmarks-header h3 {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  color: var(--text);
+}
+
+.bookmarks-close {
+  font-size: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  transition: background 0.2s;
+}
+
+.bookmarks-close:hover { background: var(--shadow-page); }
+
+.bookmarks-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bookmarks-empty {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  margin-top: 40px;
+  line-height: 1.6;
+}
+
+.bookmark-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--page-bg);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s;
+}
+
+.bookmark-item:hover {
+  transform: translateX(-3px);
+  box-shadow: 0 4px 14px var(--shadow-page);
+}
+
+.bookmark-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bookmark-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bookmark-page {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2; /* стандартное свойство */
+  -webkit-box-orient: vertical;
+}
+
+.bookmark-date {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.bookmark-del {
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  transition: background 0.2s, color 0.2s;
+}
+
+.bookmark-del:hover {
+  background: rgba(200, 50, 50, 0.15);
+  color: #c83232;
+}
+
+.bookmarks-add {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s;
+}
+
+.bookmarks-add:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px var(--shadow-book);
+}
+
+/* ===== Оглавление ===== */
+.toc-item {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--page-bg);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s;
+}
+
+.toc-item:hover {
+  transform: translateX(-3px);
+  box-shadow: 0 4px 14px var(--shadow-page);
+}
+
+.toc-item.active {
+  border-left: 3px solid var(--accent);
+}
+
+.toc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.toc-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2; /* стандартное свойство */
+  -webkit-box-orient: vertical;
+}
+
+.toc-page {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* --- Адаптивность: на узких экранах JS вешает класс .single-page,
+       который уже описан выше (левая страница — подложка). --- */

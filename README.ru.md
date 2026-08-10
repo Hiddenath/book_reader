@@ -4,6 +4,37 @@
 
 > 🇬🇧 [English version](README.md)
 
+## 🎬 Демо
+
+> ⚠️ Медиа ниже тяжёлые — нажмите, чтобы развернуть (высокий трафик, ~35 MB суммарно).
+
+<details>
+<summary>▶️ Анимация перелистывания (GIF, ~9 MB)</summary>
+
+![Анимация перелистывания страниц](assets/gif/reader-flip.gif)
+
+</details>
+
+<details>
+<summary>🎥 Полное видео-демо (MP4, ~26 MB)</summary>
+
+<video src="assets/video/demo.mp4" controls width="700"></video>
+
+</details>
+
+## 📸 Скриншоты
+
+<details>
+<summary>🖼️ Показать скриншоты (6 изображений, ~13 MB суммарно)</summary>
+
+| | |
+|---|---|
+| ![Читалка](assets/screenshots/reader.png) | ![Библиотека](assets/screenshots/library.png) |
+| ![Перелистывание](assets/screenshots/flip.png) | ![Оглавление](assets/screenshots/toc.png) |
+| ![Закладки](assets/screenshots/bookmarks.png) | ![Тёмная тема](assets/screenshots/dark-theme.png) |
+
+</details>
+
 ## ✨ Возможности
 
 ### Чтение

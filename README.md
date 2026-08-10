@@ -4,6 +4,37 @@
 
 > 🇷🇺 [Русская версия](README.ru.md)
 
+## 🎬 Demo
+
+> ⚠️ The media below is large — click to expand (high traffic, ~35 MB total).
+
+<details>
+<summary>▶️ Page-flip animation (GIF, ~9 MB)</summary>
+
+![3D page-flip animation](assets/gif/reader-flip.gif)
+
+</details>
+
+<details>
+<summary>🎥 Full video demo (MP4, ~26 MB)</summary>
+
+<video src="assets/video/demo.mp4" controls width="700"></video>
+
+</details>
+
+## 📸 Screenshots
+
+<details>
+<summary>🖼️ Show screenshots (6 images, ~13 MB total)</summary>
+
+| | |
+|---|---|
+| ![Reader](assets/screenshots/reader.png) | ![Library](assets/screenshots/library.png) |
+| ![Page flip](assets/screenshots/flip.png) | ![Table of contents](assets/screenshots/toc.png) |
+| ![Bookmarks](assets/screenshots/bookmarks.png) | ![Dark theme](assets/screenshots/dark-theme.png) |
+
+</details>
+
 ## ✨ Features
 
 ### Reading

@@ -229,6 +229,11 @@ button {
 .nav-left  { left: 0; }
 .nav-right { right: 0; }
 
+/* На сенсорных экранах зоны тапа шире — проще попадать пальцем */
+@media (hover: none), (pointer: coarse) {
+  .nav-zone { width: 18%; }
+}
+
 /* ===== Панель настроек ===== */
 .settings-panel {
   position: fixed;

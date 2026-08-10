@@ -24,6 +24,8 @@ export class Reader {
     this.castRight = this._makeCastShadow('on-right');
 
     this._bindEvents();
+    this._bindTouch();
+    this._bindVolumeKeys();
 
     // Одностраничный режим для вытянутых экранов (портрет / узкие окна)
     this.singlePage = false;
@@ -467,5 +469,55 @@ export class Reader {
       }
     };
     requestAnimationFrame(step);
+  }
+
+  /* ---------- Сенсорное управление (тач-экраны) ---------- */
+
+  /* Свайпы по сцене: влево — следующая страница, вправо — предыдущая.
+     Не конфликтует с захватом угла: если начат drag (isDragging), свайп игнорируется. */
+  _bindTouch() {
+    const scene = document.getElementById('scene');
+    let start = null;
+
+    scene.addEventListener('pointerdown', (e) => {
+      if (this.isDragging || this.isAnimating) { start = null; return; }
+      start = { x: e.clientX, y: e.clientY };
+    });
+
+    scene.addEventListener('pointerup', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      start = null;
+      // Горизонтальный свайп длиннее порога и заметно горизонтальнее вертикали
+      const threshold = Math.max(48, window.innerWidth * 0.06);
+      if (Math.abs(dx) < threshold || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+      if (dx < 0) this.next();
+      else this.prev();
+    });
+
+    // Браузер перехватил жест (например, скролл) — сбрасываем отслеживание
+    scene.addEventListener('pointercancel', () => { start = null; });
+  }
+
+  /* ---------- Клавиши громкости ---------- */
+
+  /* Обычный браузер не отдаёт странице клавиши громкости (их перехватывает ОС),
+     поэтому листание работает внутри Android WebView-обёртки, которая:
+       1) пересылает keydown с keyCode 175 (VOLUME_UP) / 174 (VOLUME_DOWN);
+       2) вызывает window.BookHavenNative.volumeUp()/volumeDown() (evaluateJavascript);
+       3) шлёт события window «volumeup» / «volumedown». */
+  _bindVolumeKeys() {
+    window.addEventListener('keydown', (e) => {
+      if (e.keyCode === 175 || e.key === 'AudioVolumeUp') this.next();
+      else if (e.keyCode === 174 || e.key === 'AudioVolumeDown') this.prev();
+    });
+
+    window.addEventListener('volumeup', () => this.next());
+    window.addEventListener('volumedown', () => this.prev());
+
+    window.BookHavenNative = window.BookHavenNative || {};
+    window.BookHavenNative.volumeUp = () => this.next();
+    window.BookHavenNative.volumeDown = () => this.prev();
   }
 }

@@ -9,7 +9,9 @@
 ### Reading
 - 📕 **3D book spread** with page-flip animation (CSS 3D)
 - 📱 **Single-page mode** — for tall/portrait screens only the right page is shown automatically
-- 🖱️ **Interactive page turning** — grab the page corner with the mouse
+- 🖱️ **Interactive page turning** — grab the page corner with the mouse or your finger
+- 👆 **Touch controls** — swipe left/right and wide tap zones on the screen edges
+- 🔊 **Volume keys** — page turning inside an Android WebView wrapper (in a regular browser the OS intercepts them)
 - ⌨️ **Navigation**: arrows, spacebar, Home/End, click zones on the sides
 - 📄 **Dynamic layout** — text is split into pages according to screen size, font and margins
 - 📍 **Position saving** — reopening a book returns you to where you left off (anchored to text, not page numbers)
@@ -34,7 +36,19 @@
 - 🎨 **5 themes**: Paper, Sepia, Night, Forest, Sky
 - 🌙 **Immersive mode** — clicking the center hides all panels
 
-## 🚀 Quick start
+## � Phone controls
+
+- **Tap the screen edges** — right/left edges flip forward/back (zones widen automatically on touch screens)
+- **Swipe** — swipe left to go forward, right to go back
+- **Volume keys** — in a regular browser the OS intercepts them, so flipping works inside an **Android WebView wrapper**. The wrapper can control the reader in three ways (implementation: `js/reader.js`, `_bindVolumeKeys`):
+
+| Way | How to do it in the wrapper |
+|-----|-----------------------------|
+| JS bridge | Call `window.BookHavenNative.volumeUp()` / `.volumeDown()` (e.g. via `evaluateJavascript` in `onKeyDown`) |
+| Event | Dispatch `window.dispatchEvent(new Event('volumeup'))` / `('volumedown')` |
+| Key | Forward a `keydown` with `keyCode` 175 (louder) / 174 (quieter) to the WebView |
+
+## �🚀 Quick start
 
 ```bash
 # Start the server (static + API in one file)
@@ -123,7 +137,7 @@ Books are stored as **plain files** in `books/` — the original filename is kep
 - [x] Table of contents / jump to chapter
 - [ ] Search and tags in the library
 - [ ] PWA (Service Worker, offline)
-- [ ] Mobile adaptation (swipes)
+- [x] Mobile adaptation (swipes, tap zones, volume keys)
 - [ ] WebGL renderer with page bending
 
 ## 📄 License

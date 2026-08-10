@@ -1,6 +1,6 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
-import { Reader } from './reader.js?v=20260809b';
+import { Reader } from './reader.js?v=20260810d';
 import { Library } from './library.js?v=20260810b';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';

@@ -19,9 +19,27 @@
 
 .library-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 40px;
+}
+
+.library-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Иконка-логотип (book.svg) */
+.library-logo {
+  height: 42px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* Ночная тема: иконка тёмная (#1b2938) — инвертируем для контраста */
+[data-theme="night"] .library-logo {
+  filter: invert(0.92);
 }
 
 .library-title {

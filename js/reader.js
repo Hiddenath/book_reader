@@ -19,7 +19,7 @@ export class Reader {
     this.currentSpread = 0;   // индекс левой страницы разворота (чётный)
     this.isAnimating = false;
     this.isDragging = false;
-
+    this.pageFlipAnimation = true; // включена ли анимация перелистывания
     this.castLeft = this._makeCastShadow('on-left');
     this.castRight = this._makeCastShadow('on-right');
 
@@ -64,12 +64,22 @@ export class Reader {
   next() {
     const step = this.singlePage ? 1 : 2;
     if (this.isAnimating || this.currentSpread + step >= this.pages.length) return;
+    if (!this.pageFlipAnimation) {
+      this.currentSpread += step;
+      this._renderSpread();
+      return;
+    }
     this._flip('forward');
   }
 
   prev() {
     const step = this.singlePage ? 1 : 2;
     if (this.isAnimating || this.currentSpread < step) return;
+    if (!this.pageFlipAnimation) {
+      this.currentSpread -= step;
+      this._renderSpread();
+      return;
+    }
     this._flip('backward');
   }
 
@@ -91,6 +101,11 @@ export class Reader {
     const index = resolveAnchorPage(anchor, this.pages, this.pageBlocks);
     if (index < 0) return;
     this.goTo(index);
+  }
+
+  /** Включает/выключает анимацию перелистывания страниц. */
+  setPageFlipAnimation(enabled) {
+    this.pageFlipAnimation = enabled;
   }
 
   get progress() {

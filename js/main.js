@@ -18,6 +18,7 @@ const State = {
     lineHeight: 1.6,
     margins: 60,
     theme: 'paper',
+    pageFlipAnimation: true,
   },
 };
 
@@ -319,6 +320,7 @@ function applySettings(reader) {
   const sameBook = reader._bookId === State.currentBook?.id && reader._bookId !== undefined;
   reader._bookId = State.currentBook?.id;
   reader.setPages(pages, sameBook, pageBlocks);
+  reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
 
   // Обновляем оглавление книги
   if (toc) State.toc?.setItems(toc);
@@ -413,6 +415,13 @@ async function init() {
   const serverState = await loadStateFromServer();
   const initialState = serverState ?? saved;
   if (initialState?.settings) Object.assign(State.settings, initialState.settings);
+
+  // Синхронизируем переключатель анимации с восстановленными настройками
+  const flipToggle = document.getElementById('setPageFlipAnimation');
+  if (flipToggle) {
+    flipToggle.checked = State.settings.pageFlipAnimation;
+    reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
+  }
 
   // Библиотека
   const library = new Library(async (book) => {
@@ -609,6 +618,15 @@ async function init() {
     scheduleReflow(reader);
     schedulePersist(library);
   });
+
+  // Переключатель анимации перелистывания
+  if (flipToggle) {
+    flipToggle.addEventListener('change', () => {
+      State.settings.pageFlipAnimation = flipToggle.checked;
+      reader.setPageFlipAnimation(flipToggle.checked);
+      schedulePersist(library);
+    });
+  }
 
   // Режим погружения: клик по центру
   document.getElementById('scene').addEventListener('click', (e) => {

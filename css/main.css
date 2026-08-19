@@ -306,6 +306,52 @@ button {
   accent-color: var(--accent);
 }
 
+/* ===== macOS-style переключатель ===== */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--shadow-page);
+  border-radius: 24px;
+  transition: background 0.25s var(--ease-out);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s var(--ease-out);
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-track + .toggle-thumb,
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
 .theme-picker {
   display: flex;
   gap: 14px;

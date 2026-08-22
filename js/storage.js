@@ -21,8 +21,7 @@ function buildStateSnapshot(settings, books, lastOpenedBookId = null) {
       progress: b.progress,
       palette: b.palette,
       bookmarks: b.bookmarks ?? [],
-      anchor: b.anchor ?? null,
-    })),
+      anchor: b.anchor ?? null,      hasCover: b.hasCover === true,    })),
   };
 }
 

@@ -1,11 +1,42 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
 import { Reader } from './reader.js?v=20260810d';
-import { Library } from './library.js?v=20260810b';
+import { Library } from './library.js?v=20260822a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
-import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260810b';
+import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260822a';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
+
+// API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
+const API_PORT = 8001;
+const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
+
+// Кэш размеров картинок из FB2: src (id <binary>) -> { w, h } (natural dimensions).
+// Нужен, чтобы пагинатор знал высоту картинки ДО её загрузки (img грузится асинхронно).
+const imageSizeCache = new Map();
+
+/**
+ * Предзагружает все картинки книги и сохраняет их natural-размеры в кэш.
+ * Возвращает Promise, который резолвится, когда все картинки загружены.
+ */
+function preloadBookImages(blocks, bookId) {
+  const tasks = [];
+  for (const b of blocks) {
+    if (b.type !== 'image' || !b.src) continue;
+    if (imageSizeCache.has(b.src)) continue;
+    const url = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(b.src)}`;
+    tasks.push(new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        imageSizeCache.set(b.src, { w: img.naturalWidth, h: img.naturalHeight });
+        resolve();
+      };
+      img.onerror = () => resolve();   // не блокируем при ошибке
+      img.src = url;
+    }));
+  }
+  return Promise.all(tasks);
+}
 
 const State = {
   currentBook: null,
@@ -76,15 +107,13 @@ function makeStableBlockId(bookId, index) {
 }
 
 function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  const value = text == null ? '' : String(text);
+  return value
+      .replace(/&/g, '&amp;')
 }
 
-function renderBlocks(blocks) {
-  return blocks.map(({ text, blockId, type = 'paragraph', level = 0 }) => {
+function renderBlocks(blocks, bookId = 'demo') {
+  return blocks.map(({ text, blockId, type = 'paragraph', level = 0, src }) => {
     const escaped = escapeHtml(text);
     switch (type) {
       case 'chapter':
@@ -97,6 +126,13 @@ function renderBlocks(blocks) {
         return `<blockquote class="cite" data-block-id="${blockId}">${escaped}</blockquote>`;
       case 'poem':
         return `<pre class="poem" data-block-id="${blockId}">${escaped}</pre>`;
+      case 'image':
+           // Картинка из FB2: src = id <binary>, грузим с сервера.
+        // aspect-ratio из кэша размеров — чтобы пагинатор знал высоту ДО загрузки.
+        const imgSrc = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`;
+        const dim = src ? imageSizeCache.get(src) : null;
+        const aspect = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
+        return `<figure class="book-image" data-block-id="${blockId}" style="${aspect}"><img src="${imgSrc}" alt="" /></figure>`;
       default:
         return `<p data-block-id="${blockId}">${escaped}</p>`;
     }
@@ -154,7 +190,7 @@ function paginate(content, settings, bookId = 'book') {
     // Разрыв страницы: принудительно завершаем текущую страницу
     if (block.type === 'pagebreak') {
       if (currentPage.length > 0) {
-        pages.push(renderBlocks(currentPage));
+        pages.push(renderBlocks(currentPage, bookId));
         pageBlocks.push(currentBlocks);
         currentPage = [];
         currentBlocks = [];
@@ -168,7 +204,7 @@ function paginate(content, settings, bookId = 'book') {
       toc.push({ title: block.text, page: pages.length });
     }
 
-    const blockHtml = renderBlocks([{ ...block, blockId: 'temp' }]);
+    const blockHtml = renderBlocks([{ ...block, blockId: 'temp' }], bookId);
 
     // Измеряем с невидимым префиксом: так абзац НЕ является first-child,
     // и к нему не применяется ::first-letter (буквица), которая завышала высоту.
@@ -178,8 +214,7 @@ function paginate(content, settings, bookId = 'book') {
     const blockTotal = blockH;
 
     if (currentH + blockTotal > contentH && currentPage.length > 0) {
-      pages.push(renderBlocks(currentPage));
-      pageBlocks.push(currentBlocks);
+      pages.push(renderBlocks(currentPage, bookId));
       currentPage = [];
       currentBlocks = [];
       currentH = 0;
@@ -190,8 +225,8 @@ function paginate(content, settings, bookId = 'book') {
     // чтобы закладки не «съезжали» при смене размера шрифта/окна.
     const blockId = makeStableBlockId(bookId, sourceIndex++);
 
-    // Блок длиннее целой страницы — делим его
-    if (blockH > contentH && currentPage.length === 0) {
+     // Блок длиннее целой страницы — делим его (картинки НЕ делятся по словам)
+    if (blockH > contentH && currentPage.length === 0 && block.type !== 'image') {
       const chunks = splitParagraph(measurer, block.text, contentH, lineH);
       for (let i = 0; i < chunks.length; i++) {
         const chunkBlock = {
@@ -201,7 +236,7 @@ function paginate(content, settings, bookId = 'book') {
           blockId,
         };
         if (i < chunks.length - 1) {
-          pages.push(renderBlocks([chunkBlock]));
+          pages.push(renderBlocks([chunkBlock], bookId));
           pageBlocks.push([{ blockId, text: chunks[i] }]);
         } else {
           currentPage.push(chunkBlock);
@@ -217,14 +252,14 @@ function paginate(content, settings, bookId = 'book') {
       type: block.type,
       level: block.level,
       blockId,
-    });
+      src: block.src,     // для картинок из FB2
+      });
     currentBlocks.push({ blockId, text: block.text });
     currentH += blockTotal;
   }
 
   if (currentPage.length > 0) {
-    pages.push(renderBlocks(currentPage));
-    pageBlocks.push(currentBlocks);
+    pages.push(renderBlocks(currentPage, bookId));
   }
 
   measurer.remove();
@@ -443,7 +478,11 @@ async function init() {
         book.blocks = data.blocks;
       }
     }
-
+     // Предзагружаем картинки из FB2 (обложка/иллюстрации) и запоминаем их
+     // размеры — иначе пагинатор измерит <img> как 0px (загрузка асинхронная).
+    if (Array.isArray(book.blocks)) {
+      await preloadBookImages(book.blocks, book.id);
+     }
     // Даём браузеру отрисовать индикатор, затем строим страницы
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {

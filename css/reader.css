@@ -193,6 +193,19 @@
   color: var(--text);
 }
 
+/* Картинки из FB2 (иллюстрации в тексте книги) */
+.page-content figure.book-image {
+  margin: 1.2em 0;
+  text-align: center;
+}
+
+.page-content figure.book-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+
 /* Корешок и срезы страниц рисуются градиентами прямо на страницах
    (см. .page-left / .page-right выше): так они прилегают к книге,
    двигаются вместе с ней и не выступают за её габариты.

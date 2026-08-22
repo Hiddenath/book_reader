@@ -148,6 +148,12 @@ def parse_fb2_blocks(fb2_text):
             if txt:
                 blocks.append({'type': 'cite', 'text': txt})
             return True
+        if t == 'image':
+            # Картинка в теле книги: <image xlink:href="#name"/>
+            href = child.attrib.get('{http://www.w3.org/1999/xlink}href', '')
+            if href.startswith('#'):
+                blocks.append({'type': 'image', 'src': href[1:]})
+            return True
         return False
 
     def walk_container(container, start_new_page):
@@ -169,6 +175,57 @@ def parse_fb2_blocks(fb2_text):
 
     walk_container(body, True)
     return blocks
+
+
+def parse_fb2_cover(fb2_text):
+    """Возвращает имя (id) бинарного файла обложки из <coverpage>, или None.
+
+    Обложка в FB2: <coverpage><image xlink:href="#respub.jpg"/></coverpage>,
+    а сами данные — в <binary id="respub.jpg" content-type="image/jpeg">base64</binary>.
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(fb2_text)
+    except ET.ParseError:
+        return None
+
+    def tag(el):
+        return el.tag.split('}')[-1]
+
+    for el in root.iter():
+        if tag(el) == 'coverpage':
+            for child in el:
+                if tag(child) == 'image':
+                    href = child.attrib.get('{http://www.w3.org/1999/xlink}href', '')
+                    if href.startswith('#'):
+                        return href[1:]
+    return None
+
+
+def find_fb2_binary(fb2_text, name):
+    """Находит <binary id="name"> в FB2 и возвращает (bytes, content_type) или None.
+
+    Данные в FB2 хранятся в base64 внутри <binary>.
+    """
+    import xml.etree.ElementTree as ET
+    import base64
+    try:
+        root = ET.fromstring(fb2_text)
+    except ET.ParseError:
+        return None
+
+    def tag(el):
+        return el.tag.split('}')[-1]
+
+    for el in root.iter():
+        if tag(el) == 'binary' and el.attrib.get('id') == name:
+            content_type = el.attrib.get('content-type', 'application/octet-stream')
+            data = el.text or ''
+            try:
+                return base64.b64decode(data), content_type
+            except Exception:
+                return None
+    return None
 
 
 class APIHandler(BaseHTTPRequestHandler):
@@ -227,6 +284,15 @@ class APIHandler(BaseHTTPRequestHandler):
         elif self.path.startswith('/books/') and self.path.endswith('/meta'):
             book_id = unquote(self.path.split('/')[-2])
             self._get_book_meta(book_id)
+        elif self.path.startswith('/books/') and self.path.endswith('/cover'):
+            book_id = unquote(self.path.split('/')[-2])
+            self._get_book_cover(book_id)
+        elif self.path.startswith('/books/') and '/image/' in self.path:
+            # /books/<id>/image/<name> — картинка из тела книги
+            parts = self.path.split('/')
+            book_id = unquote(parts[2])
+            img_name = unquote(parts[4])
+            self._get_book_image(book_id, img_name)
         else:
             self._send_json(load_state())
 
@@ -279,6 +345,9 @@ class APIHandler(BaseHTTPRequestHandler):
                     meta.setdefault('progress', 0)
                     meta.setdefault('bookmarks', [])
                     meta.setdefault('palette', [])
+                     # hasCover: если в meta.json нет — вычисляем из FB2 (старые книги)
+                    if 'hasCover' not in meta and item.suffix.lower() == '.fb2':
+                        meta['hasCover'] = parse_fb2_cover(item.read_text(encoding='utf-8')) is not None
                     books.append(meta)
                     continue
                 except Exception:
@@ -287,11 +356,13 @@ class APIHandler(BaseHTTPRequestHandler):
             # Нет sidecar — формируем базовые метаданные из файла
             try:
                 if item.suffix.lower() == '.fb2':
-                    fb2_meta = parse_fb2_meta(item.read_text(encoding='utf-8'))
+                    fb2_text = item.read_text(encoding='utf-8')
+                    fb2_meta = parse_fb2_meta(fb2_text)
                     meta = {
-                        'id': stem, 'format': 'fb2',
-                        'title': fb2_meta['title'], 'author': fb2_meta['author'],
-                        'progress': 0, 'bookmarks': [], 'palette': [],
+                         'id': stem, 'format': 'fb2',
+                         'title': fb2_meta['title'], 'author': fb2_meta['author'],
+                         'progress': 0, 'bookmarks': [], 'palette': [],
+                         'hasCover': parse_fb2_cover(fb2_text) is not None,
                     }
                 else:
                     meta = {
@@ -339,6 +410,55 @@ class APIHandler(BaseHTTPRequestHandler):
             text = content_file.read_text(encoding='utf-8')
             self._send_json({'text': text})
 
+    def _get_book_cover(self, book_id):
+        """Отдаёт обложку книги (из <coverpage> FB2) как картинку."""
+        content_file = self._find_book_content_file(book_id)
+        if content_file is None or content_file.suffix.lower() != '.fb2':
+            self._send_json({'error': 'No cover'}, status=404)
+            return
+
+        fb2_text = content_file.read_text(encoding='utf-8')
+        cover_name = parse_fb2_cover(fb2_text)
+        if not cover_name:
+            self._send_json({'error': 'No cover'}, status=404)
+            return
+
+        result = find_fb2_binary(fb2_text, cover_name)
+        if not result:
+            self._send_json({'error': 'No cover data'}, status=404)
+            return
+
+        data, content_type = result
+        self._send_binary(data, content_type)
+
+    def _get_book_image(self, book_id, img_name):
+        """Отдаёт картинку из тела книги (по id <binary>)."""
+        content_file = self._find_book_content_file(book_id)
+        if content_file is None or content_file.suffix.lower() != '.fb2':
+            self._send_json({'error': 'Not found'}, status=404)
+            return
+
+        fb2_text = content_file.read_text(encoding='utf-8')
+        result = find_fb2_binary(fb2_text, img_name)
+        if not result:
+            self._send_json({'error': 'Image not found'}, status=404)
+            return
+
+        data, content_type = result
+        self._send_binary(data, content_type)
+
+    def _send_binary(self, data, content_type):
+        """Отдаёт бинарные данные (картинку) с правильным Content-Type."""
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.end_headers()
+            self.wfile.write(data)
+        except OSError:
+            pass    # Клиент уже закрыл соединение
     def _save_book(self):
         """Сохраняет книгу в папку books/ (сохраняем оригинальный FB2)."""
         book, err = self._read_json_body()
@@ -349,11 +469,11 @@ class APIHandler(BaseHTTPRequestHandler):
         format_ = book.get('format', 'txt')
         ext = '.fb2' if format_ == 'fb2' else '.txt'
 
-        # Имя файла = оригинальное имя книги (без потери), при конфликте — суффикс
+         # Имя файла = оригинальное имя книги (без потери), при конфликте — суффикс
         original_name = book.get('originalName') or f"{book.get('title', 'book')}{ext}"
 
-        # Запрос без originalName — подозрительно: такую книгу могла отправить
-        # миграция из state.json, а имя файла построено из title → возможный дубликат
+         # Запрос без originalName — подозрительно: такую книгу могла отправить
+         # миграция из state.json, а имя файла построено из title → возможный дубликат
         if not book.get('originalName'):
             log(f'WARN POST /books: запрос БЕЗ originalName, имя «{original_name}» построено из title — возможен дубликат!')
 
@@ -362,40 +482,42 @@ class APIHandler(BaseHTTPRequestHandler):
 
         content_file, stem = self._unique_file(BOOKS_DIR, original_name)
 
-        # Логируем конфликт имён — так видно момент создания дубликата
+         # Логируем конфликт имён — так видно момент создания дубликата
         ip = self.client_address[0] if self.client_address else '?'
         if content_file.name != original_name:
             log(f'WARN POST /books {ip}: имя «{original_name}» уже занято — создан дубликат «{content_file.name}»')
         else:
             log(f'POST /books {ip}: сохраняю «{content_file.name}»')
 
-        # Сохраняем контент прямо в books/ (без подпапок)
+         # Сохраняем контент прямо в books/ (без подпапок)
         if format_ == 'fb2' and book.get('fb2_content'):
             content_file.write_text(book['fb2_content'], encoding='utf-8')
         else:
             content_file.write_text(book.get('text', ''), encoding='utf-8')
 
-        book_id = stem  # id книги = имя файла без расширения
+        book_id = stem   # id книги = имя файла без расширения
 
-        # Базовые метаданные — сервер сам извлекает title/author из FB2,
-        # для остальных форматов берём из payload
+         # Базовые метаданные — сервер сам извлекает title/author из FB2,
+         # для остальных форматов берём из payload
         meta = {
-            'title': book.get('title', 'Без названия'),
-            'author': book.get('author', 'Неизвестный автор'),
-            'format': format_,
-            'progress': book.get('progress', 0),
-            'palette': book.get('palette', []),
-            'bookmarks': book.get('bookmarks', []),
-            'anchor': book.get('anchor'),
+             'title': book.get('title', 'Без названия'),
+             'author': book.get('author', 'Неизвестный автор'),
+             'format': format_,
+             'progress': book.get('progress', 0),
+             'palette': book.get('palette', []),
+             'bookmarks': book.get('bookmarks', []),
+             'anchor': book.get('anchor'),
         }
 
         if format_ == 'fb2' and book.get('fb2_content'):
-            # Метаданные извлекаем на сервере из оригинального файла
+             # Метаданные извлекаем на сервере из оригинального файла
             fb2_meta = parse_fb2_meta(book['fb2_content'])
             meta['title'] = fb2_meta['title']
             meta['author'] = fb2_meta['author']
+             # Есть ли обложка в файле — чтобы библиотека показывала картинку
+            meta['hasCover'] = parse_fb2_cover(book['fb2_content']) is not None
 
-        # Метаданные — sidecar файл рядом с книгой: <stem>.meta.json
+         # Метаданные — sidecar файл рядом с книгой: <stem>.meta.json
         meta_file = BOOKS_DIR / f"{book_id}.meta.json"
         meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -403,7 +525,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def _unique_file(self, directory, filename):
         """Возвращает (путь_файла, stem) с уникальным именем:
-           если файл уже есть — добавляет ' (2)', ' (3)' и т.д."""
+        если файл уже есть — добавляет ' (2)', ' (3)' и т.д."""
         stem = Path(filename).stem
         ext = Path(filename).suffix
         candidate = directory / filename

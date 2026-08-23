@@ -113,6 +113,47 @@ def parse_fb2_blocks(fb2_text):
     def text_of(el):
         return ' '.join(t for t in el.itertext() if t and t.strip()).strip()
 
+    def poem_text(poem_el):
+        """Собирает текст стихотворения: <v> = строка, <stanza> = строфа.
+        Строки внутри строфы соединяются переносом, строфы — пустой строкой.
+        Если <stanza> нет — прямые <v> дети считаются строками."""
+        lines = []
+        stanzas = [c for c in poem_el if tag(c) == 'stanza']
+        if stanzas:
+            for stanza in stanzas:
+                stanza_lines = [text_of(v) for v in stanza if tag(v) == 'v']
+                stanza_lines = [s for s in stanza_lines if s]
+                if stanza_lines:
+                    lines.append('\n'.join(stanza_lines))
+            return '\n\n'.join(lines)
+        # Нет <stanza> — прямые <v> дети
+        for v in poem_el:
+            if tag(v) == 'v':
+                txt = text_of(v)
+                if txt:
+                    lines.append(txt)
+        return '\n'.join(lines)
+
+    def rich_text_of(el):
+        """Текст с сохранением переносов строк (для poem/epigraph/cite).
+        <poem> разбирается по строкам; <epigraph>/<cite> — по детям,
+        где <poem>/<epigraph>/<cite> рекурсивны, остальное — text_of."""
+        t = tag(el)
+        if t == 'poem':
+            return poem_text(el)
+        if t in ('epigraph', 'cite'):
+            parts = []
+            for child in el:
+                ct = tag(child)
+                if ct in ('poem', 'epigraph', 'cite'):
+                    txt = rich_text_of(child)
+                else:
+                    txt = text_of(child)
+                if txt:
+                    parts.append(txt)
+            return '\n\n'.join(parts)
+        return text_of(el)
+
     blocks = []
 
     def add_child(child):
@@ -134,17 +175,17 @@ def parse_fb2_blocks(fb2_text):
                 blocks.append({'type': 'subtitle', 'text': txt})
             return True
         if t == 'epigraph':
-            txt = text_of(child)
+            txt = rich_text_of(child)
             if txt:
                 blocks.append({'type': 'epigraph', 'text': txt})
             return True
         if t == 'poem':
-            txt = text_of(child)
+            txt = poem_text(child)
             if txt:
                 blocks.append({'type': 'poem', 'text': txt})
             return True
         if t == 'cite':
-            txt = text_of(child)
+            txt = rich_text_of(child)
             if txt:
                 blocks.append({'type': 'cite', 'text': txt})
             return True

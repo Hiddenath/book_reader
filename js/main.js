@@ -202,6 +202,14 @@ function paginate(content, settings, bookId = 'book') {
     // Заголовок главы — фиксируем номер страницы для оглавления
     if (block.type === 'chapter') {
       toc.push({ title: block.text, page: pages.length });
+      // Глава начинается с новой страницы. В двухстраничном режиме название
+      // главы должно быть на ЛЕВОЙ странице, текст — на правой: если текущая
+      // страница нечётная (правая), добавляем пустую левую, чтобы заголовок
+      // попал на левую разворота.
+      if (pages.length % 2 !== 0) {
+        pages.push('');
+        pageBlocks.push([]);
+      }
     }
 
     const blockHtml = renderBlocks([{ ...block, blockId: 'temp' }], bookId);
@@ -227,7 +235,7 @@ function paginate(content, settings, bookId = 'book') {
 
      // Блок длиннее целой страницы — делим его (картинки НЕ делятся по словам)
     if (blockH > contentH && currentPage.length === 0 && block.type !== 'image') {
-      const chunks = splitParagraph(measurer, block.text, contentH, lineH);
+      const chunks = splitParagraph(measurer, block.text, contentH, lineH, block.type);
       for (let i = 0; i < chunks.length; i++) {
         const chunkBlock = {
           text: chunks[i],
@@ -274,12 +282,41 @@ function paginate(content, settings, bookId = 'book') {
 // Высота последнего измеренного чанка (заполняется в splitParagraph)
 let measurerLastH = 0;
 
-/* Делит длинный абзац на куски, каждый из которых помещается в contentH.
-   Бинарным поиском по словам находит максимальный влезающий префикс. */
-function splitParagraph(measurer, para, contentH, lineH) {
-  const words = para.split(/\s+/);
+/* Делит длинный блок (абзац/стих/эпиграф) на куски, каждый из которых
+   помещается в contentH. Бинарным поиском по словам находит максимальный
+   влезающий префикс. Измеряет РЕАЛЬНОЙ разметкой блока (blockquote/pre),
+   чтобы высота совпадала с финальным рендером. Переносы строк (\n)
+   сохраняются: слова стыкуются тем же разделителем, что был в тексте. */
+function splitParagraph(measurer, para, contentH, lineH, type = 'paragraph') {
+  // Слова с сохранением исходных разделителей (включая \n)
+  const tokens = String(para ?? '').split(/(\s+)/).filter((t) => t !== '');
+  const words = tokens.filter((t) => !/^\s+$/.test(t));
   const chunks = [];
   let rest = words;
+
+  // Нечего делить (пустой блок) — возвращаем пустой список
+  if (words.length === 0) {
+    measurerLastH = 0;
+    return chunks;
+  }
+
+  // Рендер фрагмента той же разметкой, что и финальная (иначе высота врёт).
+  // Склеиваем слова, восстанавливая исходные разделители (переносы строк!).
+  // renderBlocks сам экранирует HTML.
+  const renderChunk = (wordsArr) => {
+    let text = '';
+    let wi = 0;
+    for (const tok of tokens) {
+      if (/^\s+$/.test(tok)) {
+        text += tok.includes('\n') ? '\n' : ' ';
+      } else {
+        if (wi < wordsArr.length) text += wordsArr[wi];
+        wi++;
+        if (wi >= wordsArr.length) break;
+      }
+    }
+    return renderBlocks([{ text, type, blockId: 'temp' }], 'demo');
+  };
 
   const PREFIX = '<span style="display:block;height:0"></span>';
 
@@ -287,7 +324,7 @@ function splitParagraph(measurer, para, contentH, lineH) {
     let lo = 1, hi = rest.length, fit = 1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      measurer.innerHTML = `${PREFIX}<p>${rest.slice(0, mid).join(' ')}</p>`;
+      measurer.innerHTML = `${PREFIX}${renderChunk(rest.slice(0, mid))}`;
       if (measurer.getBoundingClientRect().height <= contentH) {
         fit = mid;
         lo = mid + 1;
@@ -300,7 +337,7 @@ function splitParagraph(measurer, para, contentH, lineH) {
   }
 
   // Высота последнего чанка — для продолжения накопления страницы
-  measurer.innerHTML = `${PREFIX}<p>${chunks[chunks.length - 1]}</p>`;
+  measurer.innerHTML = `${PREFIX}${renderChunk(chunks[chunks.length - 1].split(/\s+/))}`;
   measurerLastH = measurer.getBoundingClientRect().height;
   return chunks;
 }

@@ -158,7 +158,7 @@
   margin: 0 0 0.9em;
 }
 
-.page-content p:first-child::first-letter {
+.page-content p::first-letter {
   font-size: 1.15em;
   color: var(--accent);
 }
@@ -182,6 +182,8 @@
   border-left: 3px solid var(--accent);
   color: var(--text-dim);
   font-style: italic;
+  white-space: pre-wrap;   /* сохранить переносы строк в стихах/эпиграфах */
+  text-align: center;      /* стихи и цитаты — по центру */
 }
 
 .page-content pre.poem {
@@ -191,6 +193,7 @@
   line-height: 1.5;
   margin-bottom: 0.9em;
   color: var(--text);
+  text-align: center;      /* стихи — по центру */
 }
 
 /* Картинки из FB2 (иллюстрации в тексте книги) */

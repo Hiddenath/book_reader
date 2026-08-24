@@ -387,7 +387,7 @@ body.immersive .settings-panel {
   box-shadow: -8px 0 40px var(--shadow-book);
   transform: translateX(105%);
   transition: transform 0.35s var(--ease-out);
-  z-index: 90;
+  z-index: 300;
   display: flex;
   flex-direction: column;
   padding: 20px;

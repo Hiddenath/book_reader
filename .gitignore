@@ -1,6 +1,7 @@
 /.DS_Store
 /.архив
 /__pycache__
+deploy.sh
 # Книги: содержимое не храним, но папку держим в репозитории (через .gitkeep)
 books/*
 !books/.gitkeep

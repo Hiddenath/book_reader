@@ -248,7 +248,7 @@ button {
   padding: 42px 28px 32px;
   box-shadow: 0 -8px 40px var(--shadow-book);
   transition: transform 0.35s var(--ease-out);
-  z-index: 110;
+  z-index: 200;
   overflow: visible;
 }
 

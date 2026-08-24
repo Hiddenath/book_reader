@@ -50,6 +50,7 @@ const State = {
     margins: 60,
     theme: 'paper',
     pageFlipAnimation: true,
+    hyphenation: true,
   },
 };
 
@@ -129,10 +130,14 @@ function renderBlocks(blocks, bookId = 'demo') {
       case 'image':
            // Картинка из FB2: src = id <binary>, грузим с сервера.
         // aspect-ratio из кэша размеров — чтобы пагинатор знал высоту ДО загрузки.
+        // Высота figure задана ЯВНО (включая padding 1.2em сверху и снизу):
+        // иначе измеритель и реальный рендер расходятся на ~2.4em → overflow.
         const imgSrc = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`;
+        // aspect-ratio на img: измеритель знает высоту ДО загрузки,
+        // а max-height (CSS) сжимает слишком высокие картинки.
         const dim = src ? imageSizeCache.get(src) : null;
-        const aspect = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
-        return `<figure class="book-image" data-block-id="${blockId}" style="${aspect}"><img src="${imgSrc}" alt="" /></figure>`;
+        const style = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
+        return `<figure class="book-image" data-block-id="${blockId}"><img src="${imgSrc}" alt="" style="${style}" /></figure>`;
       default:
         return `<p data-block-id="${blockId}">${escaped}</p>`;
     }
@@ -140,13 +145,18 @@ function renderBlocks(blocks, bookId = 'demo') {
 }
 
 function paginate(content, settings, bookId = 'book') {
+  const bookEl = document.getElementById('book');
   const measurer = document.createElement('div');
   measurer.className = 'page-content';
+  // Наследуем шрифт книги: иначе измеритель считает метриками body-шрифта,
+  // и высота блоков не совпадает с реальной (переполнение страниц).
+  const bookFont = bookEl ? getComputedStyle(bookEl).fontFamily : '';
   measurer.style.cssText = `
     position: absolute; visibility: hidden; pointer-events: none;
     height: auto; inset: auto;
     font-size: ${settings.fontSize}px;
     line-height: ${settings.lineHeight};
+    font-family: ${bookFont};
     padding: 0;
   `;
   document.body.appendChild(measurer);
@@ -171,6 +181,9 @@ function paginate(content, settings, bookId = 'book') {
   const contentH = pageH - padTop - padBottom;
   const lineH = settings.fontSize * settings.lineHeight;
 
+  // Доступная высота страницы — для ограничения высоты картинок в CSS
+  book.style.setProperty('--page-content-h', `${contentH}px`);
+
   measurer.style.width = `${contentW}px`;
 
   // Поддержка блоков (новый формат) или plain text (старый)
@@ -185,6 +198,7 @@ function paginate(content, settings, bookId = 'book') {
   let currentBlocks = [];
   let currentH = 0;
   let sourceIndex = 0;      // стабильный номер ИСХОДНОГО блока (не чанка!)
+  let lastWasHeader = false; // предыдущий блок был заголовком (глава/подзаголовок)
 
   for (const block of blocks) {
     // Разрыв страницы: принудительно завершаем текущую страницу
@@ -196,20 +210,35 @@ function paginate(content, settings, bookId = 'book') {
         currentBlocks = [];
         currentH = 0;
       }
+      lastWasHeader = false;
       continue;
     }
 
-    // Заголовок главы — фиксируем номер страницы для оглавления
+    // Заголовок главы: глава начинается с новой страницы, НО если подряд идут
+    // несколько заголовков (автор, серия, название, аннотация, пролог) —
+    // каждый на своей странице — слишком много пустых страниц. Поэтому
+    // разрыв делаем только если предыдущий блок НЕ был заголовком.
     if (block.type === 'chapter') {
-      toc.push({ title: block.text, page: pages.length });
-      // Глава начинается с новой страницы. В двухстраничном режиме название
-      // главы должно быть на ЛЕВОЙ странице, текст — на правой: если текущая
-      // страница нечётная (правая), добавляем пустую левую, чтобы заголовок
-      // попал на левую разворота.
+      if (!lastWasHeader && currentPage.length > 0) {
+        pages.push(renderBlocks(currentPage, bookId));
+        pageBlocks.push(currentBlocks);
+        currentPage = [];
+        currentBlocks = [];
+        currentH = 0;
+      }
+      // В двухстраничном режиме название главы — на ЛЕВОЙ странице разворота:
+      // если текущая позиция нечётная (правая страница), добавляем пустую.
       if (pages.length % 2 !== 0) {
         pages.push('');
         pageBlocks.push([]);
       }
+      // TOC указывает на ФАКТИЧЕСКУЮ страницу заголовка (после выравнивания)
+      toc.push({ title: block.text, page: pages.length });
+      lastWasHeader = true;
+    } else if (block.type === 'subtitle') {
+      lastWasHeader = true;
+    } else {
+      lastWasHeader = false;
     }
 
     const blockHtml = renderBlocks([{ ...block, blockId: 'temp' }], bookId);
@@ -218,14 +247,22 @@ function paginate(content, settings, bookId = 'book') {
     // и к нему не применяется ::first-letter (буквица), которая завышала высоту.
     // margin-bottom уже включён в измерение — отдельный gap не нужен.
     measurer.innerHTML = `<span style="display:block;height:0"></span>${blockHtml}`;
-    const blockH = measurer.getBoundingClientRect().height;
-    const blockTotal = blockH;
+    let blockH = measurer.getBoundingClientRect().height;
 
-    if (currentH + blockTotal > contentH && currentPage.length > 0) {
-      pages.push(renderBlocks(currentPage, bookId));
-      currentPage = [];
-      currentBlocks = [];
-      currentH = 0;
+    // Высота картинки: измерение может дать ТОЛЬКО padding (43px), если
+    // aspect-ratio не подставился (кэш размеров пуст в момент измерения).
+    // В этом случае считаем высоту из кэша размеров; заодно ограничиваем
+    // высоту страницы (CSS max-height сжимает рендер так же).
+    if (block.type === 'image') {
+      const dim = block.src ? imageSizeCache.get(block.src) : null;
+      if (dim && dim.w && dim.h) {
+        const pad = settings.fontSize * 2.4;                  // padding figure
+        const maxImgH = contentH - pad;
+        const imgH = Math.min(contentW * dim.h / dim.w, maxImgH);
+        // Расчётная высота всегда точнее измерения: она учитывает и
+        // схлопывание (кэш был пуст), и ограничение высотой страницы.
+        blockH = imgH + pad;
+      }
     }
 
     // ВАЖНО: один стабильный id на ИСХОДНЫЙ блок текста.
@@ -233,26 +270,67 @@ function paginate(content, settings, bookId = 'book') {
     // чтобы закладки не «съезжали» при смене размера шрифта/окна.
     const blockId = makeStableBlockId(bookId, sourceIndex++);
 
-     // Блок длиннее целой страницы — делим его (картинки НЕ делятся по словам)
-    if (blockH > contentH && currentPage.length === 0 && block.type !== 'image') {
-      const chunks = splitParagraph(measurer, block.text, contentH, lineH, block.type);
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkBlock = {
-          text: chunks[i],
-          type: block.type,
-          level: block.level,
-          blockId,
-        };
+    // Блок не помещается в остаток страницы:
+    // - если блок ЦЕЛИКОМ помещается на пустой странице — переносим целиком
+    //   (не рвём прозу без необходимости);
+    // - если блок длиннее целой страницы — режем по ПРЕДЛОЖЕНИЯМ, заполняя
+    //   остаток текущей страницы первым чанком (предложение не разрывается).
+    const splittable = block.type !== 'image' && block.type !== 'chapter' && block.type !== 'subtitle';
+    if (splittable && currentH + blockH > contentH && currentPage.length > 0 && blockH > contentH) {
+      const avail = contentH - currentH;
+      const chunks = splitParagraph(measurer, block.text, contentH, lineH, block.type, avail);
+      // Пустой первый чанк = блок целиком переносится на новую страницу
+      if (chunks[0] === '') {
+        pages.push(renderBlocks(currentPage, bookId));
+        pageBlocks.push(currentBlocks);
+        currentPage = [];
+        currentBlocks = [];
+        currentH = 0;
+        // Блок длиннее страницы — раскладываем остаток постранично
+        for (let i = 0; i < chunks.length; i++) {
+          if (!chunks[i]) continue;
+          const cb = { text: chunks[i], type: block.type, level: block.level, blockId };
+          if (i < chunks.length - 1) {
+            pages.push(renderBlocks([cb], bookId));
+            pageBlocks.push([{ blockId, text: chunks[i] }]);
+          } else {
+            currentPage.push(cb);
+            currentBlocks.push({ blockId, text: chunks[i] });
+            currentH = measurerLastH;
+          }
+        }
+        continue;
+      }
+      // Первый чанк — в остаток текущей страницы
+      currentPage.push({ text: chunks[0], type: block.type, level: block.level, blockId });
+      currentBlocks.push({ blockId, text: chunks[0] });
+      pages.push(renderBlocks(currentPage, bookId));
+      pageBlocks.push(currentBlocks);
+      currentPage = [];
+      currentBlocks = [];
+      currentH = 0;
+      // Остальные чанки — постранично
+      for (let i = 1; i < chunks.length; i++) {
+        const cb = { text: chunks[i], type: block.type, level: block.level, blockId };
         if (i < chunks.length - 1) {
-          pages.push(renderBlocks([chunkBlock], bookId));
+          pages.push(renderBlocks([cb], bookId));
           pageBlocks.push([{ blockId, text: chunks[i] }]);
         } else {
-          currentPage.push(chunkBlock);
+          currentPage.push(cb);
           currentBlocks.push({ blockId, text: chunks[i] });
           currentH = measurerLastH;
         }
       }
       continue;
+    }
+
+    // Блок не влезает в остаток — переносим ЦЕЛИКОМ на следующую страницу
+    if (currentH + blockH > contentH && currentPage.length > 0) {
+      pages.push(renderBlocks(currentPage, bookId));
+      pageBlocks.push(currentBlocks);
+      currentPage = [];
+      currentBlocks = [];
+      currentH = 0;
     }
 
     currentPage.push({
@@ -263,11 +341,12 @@ function paginate(content, settings, bookId = 'book') {
       src: block.src,     // для картинок из FB2
       });
     currentBlocks.push({ blockId, text: block.text });
-    currentH += blockTotal;
+    currentH += blockH;
   }
 
   if (currentPage.length > 0) {
     pages.push(renderBlocks(currentPage, bookId));
+    pageBlocks.push(currentBlocks);
   }
 
   measurer.remove();
@@ -287,59 +366,106 @@ let measurerLastH = 0;
    влезающий префикс. Измеряет РЕАЛЬНОЙ разметкой блока (blockquote/pre),
    чтобы высота совпадала с финальным рендером. Переносы строк (\n)
    сохраняются: слова стыкуются тем же разделителем, что был в тексте. */
-function splitParagraph(measurer, para, contentH, lineH, type = 'paragraph') {
-  // Слова с сохранением исходных разделителей (включая \n)
-  const tokens = String(para ?? '').split(/(\s+)/).filter((t) => t !== '');
-  const words = tokens.filter((t) => !/^\s+$/.test(t));
+function splitParagraph(measurer, para, contentH, lineH, type = 'paragraph', firstLimit = null) {
+  // Режем по ПРЕДЛОЖЕНИЯМ (заканчиваются на . ! ? …), чтобы предложение
+  // не разрывалось между страницами. firstLimit — отдельный лимит для ПЕРВОГО
+  // чанка (заполнение остатка страницы), остальные чанки — по contentH.
+  const text = String(para ?? '');
   const chunks = [];
-  let rest = words;
 
-  // Нечего делить (пустой блок) — возвращаем пустой список
-  if (words.length === 0) {
+  const renderChunk = (str) => renderBlocks([{ text: str, type, blockId: 'temp' }], 'demo');
+
+  const PREFIX = '<span style="display:block;height:0"></span>';
+  const fits = (str, limit) => {
+    measurer.innerHTML = `${PREFIX}${renderChunk(str)}`;
+    return measurer.getBoundingClientRect().height <= limit;
+  };
+
+  // Деление на предложения: знак конца (. ! ? …) + пробел.
+  // Не делим внутри "..." (они уже покрыты) и после однобуквенных инициалов.
+  const sentences = text
+    .split(/(?<=[.!?…])(\s+)/)
+    .reduce((acc, part, i, arr) => {
+      if (i % 2 === 0) acc.push(part);
+      else acc[acc.length - 1] += part;   // пробел — к предыдущему предложению
+      return acc;
+    }, [])
+    .filter((s) => s.trim());
+
+  if (sentences.length === 0) {
     measurerLastH = 0;
     return chunks;
   }
 
-  // Рендер фрагмента той же разметкой, что и финальная (иначе высота врёт).
-  // Склеиваем слова, восстанавливая исходные разделители (переносы строк!).
-  // renderBlocks сам экранирует HTML.
-  const renderChunk = (wordsArr) => {
-    let text = '';
-    let wi = 0;
-    for (const tok of tokens) {
-      if (/^\s+$/.test(tok)) {
-        text += tok.includes('\n') ? '\n' : ' ';
-      } else {
-        if (wi < wordsArr.length) text += wordsArr[wi];
-        wi++;
-        if (wi >= wordsArr.length) break;
+  // Сборка чанков: жадно набираем предложения в лимит.
+  const buildChunks = (list, firstLimit) => {
+    const out = [];
+    let rest = list;
+    let limit = firstLimit ?? contentH;
+    let isFirst = true;
+    while (rest.length > 0) {
+      if (!fits(rest[0], limit)) {
+        if (isFirst && fits(rest[0], contentH)) {
+          // Первое предложение не влезает в остаток страницы, но влезает
+          // в целую страницу — первый чанк ПУСТОЙ (блок начнётся с новой
+          // страницы целиком, предложение не разорвётся).
+          out.push('');
+          limit = contentH;
+          isFirst = false;
+          continue;
+        }
+        // Фолбэк: предложение длиннее целой страницы.
+        // Сначала пробуем резать по запятым/двоеточиям (естественные паузы),
+        // и только если и часть не влезает — по словам.
+        const parts = rest[0].split(/(?<=[,;:])\s+/).filter((s) => s.trim());
+        if (parts.length > 1 && fits(parts[0], limit)) {
+          // Жадно набираем части предложения
+          let lo = 1, hi = parts.length, fit = 1;
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (fits(parts.slice(0, mid).join(' '), limit)) { fit = mid; lo = mid + 1; }
+            else { hi = mid - 1; }
+          }
+          out.push(parts.slice(0, fit).join(' '));
+          rest = [parts.slice(fit).join(' '), ...rest.slice(1)];
+        } else {
+          // Совсем безнадёжно — режем по словам
+          const tokens = rest[0].split(/(\s+)/).filter((t) => t !== '');
+          const words = tokens.filter((t) => !/^\s+$/.test(t));
+          let lo = 1, hi = words.length, fit = 1;
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (fits(words.slice(0, mid).join(' '), limit)) { fit = mid; lo = mid + 1; }
+            else { hi = mid - 1; }
+          }
+          out.push(words.slice(0, fit).join(' '));
+          rest = [words.slice(fit).join(' '), ...rest.slice(1)];
+        }
+        limit = contentH;
+        isFirst = false;
+        continue;
       }
+      // Бинарный поиск: максимум предложений, влезающих в лимит
+      let lo = 1, hi = rest.length, fit = 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (fits(rest.slice(0, mid).join(' '), limit)) { fit = mid; lo = mid + 1; }
+        else { hi = mid - 1; }
+      }
+      out.push(rest.slice(0, fit).join(' '));
+      rest = rest.slice(fit);
+      limit = contentH;
+      isFirst = false;
     }
-    return renderBlocks([{ text, type, blockId: 'temp' }], 'demo');
+    return out;
   };
 
-  const PREFIX = '<span style="display:block;height:0"></span>';
-
-  while (rest.length > 0) {
-    let lo = 1, hi = rest.length, fit = 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      measurer.innerHTML = `${PREFIX}${renderChunk(rest.slice(0, mid))}`;
-      if (measurer.getBoundingClientRect().height <= contentH) {
-        fit = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    chunks.push(rest.slice(0, fit).join(' '));
-    rest = rest.slice(fit);
-  }
+  const result = buildChunks(sentences, firstLimit);
 
   // Высота последнего чанка — для продолжения накопления страницы
-  measurer.innerHTML = `${PREFIX}${renderChunk(chunks[chunks.length - 1].split(/\s+/))}`;
+  measurer.innerHTML = `${PREFIX}${renderChunk(result[result.length - 1])}`;
   measurerLastH = measurer.getBoundingClientRect().height;
-  return chunks;
+  return result;
 }
 
 /* ---------- Применение настроек ---------- */
@@ -354,6 +480,8 @@ function applyVisualSettings() {
   book.style.setProperty('--line-height', s.lineHeight);
   book.style.setProperty('--margins', `${s.margins}px`);
   document.documentElement.dataset.theme = s.theme;
+  // Перенос слов: управляется классом на книге (hyphens: auto/manual в CSS)
+  book.classList.toggle('no-hyphens', s.hyphenation === false);
 
   document.querySelectorAll('.theme-dot').forEach(d =>
     d.classList.toggle('active', d.dataset.themeName === s.theme));
@@ -495,6 +623,18 @@ async function init() {
     reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
   }
 
+  // Переключатель переноса слов
+  const hyphToggle = document.getElementById('setHyphenation');
+  if (hyphToggle) {
+    hyphToggle.checked = State.settings.hyphenation !== false;
+    hyphToggle.addEventListener('change', () => {
+      State.settings.hyphenation = hyphToggle.checked;
+      applyVisualSettings();
+      scheduleReflow(reader);
+      schedulePersist(library);
+    });
+  }
+
   // Библиотека
   const library = new Library(async (book) => {
     State.currentBook = book;
@@ -518,7 +658,11 @@ async function init() {
      // Предзагружаем картинки из FB2 (обложка/иллюстрации) и запоминаем их
      // размеры — иначе пагинатор измерит <img> как 0px (загрузка асинхронная).
     if (Array.isArray(book.blocks)) {
+      const hadNew = book.blocks.some((b) => b.type === 'image' && b.src && !imageSizeCache.has(b.src));
       await preloadBookImages(book.blocks, book.id);
+      // Если размеры получены впервые — сбрасываем кэш страниц: в нём
+      // картинки могли быть «схлопнуты» в 0px (измерение до загрузки).
+      if (hadNew) State.pageCache.clear();
      }
     // Даём браузеру отрисовать индикатор, затем строим страницы
     requestAnimationFrame(() => {

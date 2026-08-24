@@ -152,6 +152,12 @@
   -webkit-user-select: none; /* Safari ≤ 16 */
 }
 
+/* Перенос слов отключён (настройка) */
+.book.no-hyphens .page-content {
+  hyphens: manual;
+  -webkit-hyphens: manual;
+}
+
 .page-content p {
   /* margin-top убран намеренно: иначе браузерный 1em давал
      двойной отступ и ломал расчёт высоты в пагинаторе */
@@ -196,15 +202,27 @@
   text-align: center;      /* стихи — по центру */
 }
 
-/* Картинки из FB2 (иллюстрации в тексте книги) */
+/* Картинки из FB2 (иллюстрации в тексте книги).
+   Вертикальный отступ — ТОЛЬКО через padding figure (не margin!):
+   margin детей не входит в scrollHeight родителя и в измерение
+   пагинатора → страницы с картинками переполнялись на ~2.4em. */
 .page-content figure.book-image {
-  margin: 1.2em 0;
+  margin: 0;
+  padding: 1.2em 0;
   text-align: center;
+  line-height: 0;   /* убрать лишний интерлайн под img */
 }
 
 .page-content figure.book-image img {
+  display: block;
+  /* Картинка вписывается в страницу: не шире контента и не выше
+     доступной высоты минус вертикальный padding figure (2 × 1.2em).
+     --page-content-h задаёт пагинатор. */
   max-width: 100%;
+  max-height: calc(var(--page-content-h, 530px) - 2.4em);
+  width: auto;
   height: auto;
+  margin: 0 auto;
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.15);
 }

@@ -113,6 +113,44 @@ def parse_fb2_blocks(fb2_text):
     def text_of(el):
         return ' '.join(t for t in el.itertext() if t and t.strip()).strip()
 
+    XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
+
+    def inline_text(el):
+        """Текст с сохранением сносок: <a type="note" href="#id">[1]</a>
+        заменяется маркером \\uE000id\\uE001[1]\\uE002 — фронтенд сделает его
+        кликабельной ссылкой с подсказкой. Обычный текст — как в text_of."""
+        parts = []
+
+        def walk(node):
+            if tag(node) == 'a' and node.attrib.get('type') == 'note':
+                href = node.attrib.get(XLINK_HREF, '')
+                note_id = href[1:] if href.startswith('#') else ''
+                inner = ' '.join(t for t in node.itertext() if t and t.strip()).strip()
+                if note_id:
+                    parts.append(f'\uE000{note_id}\uE001{inner}\uE002')
+                elif inner:
+                    parts.append(inner)
+                return
+            if node.text and node.text.strip():
+                parts.append(node.text.strip())
+            for child in node:
+                walk(child)
+                if child.tail and child.tail.strip():
+                    parts.append(child.tail.strip())
+
+        walk(el)
+        # Склеиваем: маркер сноски приклеивается к предыдущему слову без
+        # пробела («…Сигишоары…[1]»), остальное — через пробел.
+        result = ''
+        for p in parts:
+            if p.startswith('\uE000'):
+                result += p
+            elif result:
+                result += ' ' + p
+            else:
+                result = p
+        return result
+
     def poem_text(poem_el):
         """Собирает текст стихотворения: <v> = строка, <stanza> = строфа.
         Строки внутри строфы соединяются переносом, строфы — пустой строкой.
@@ -121,7 +159,7 @@ def parse_fb2_blocks(fb2_text):
         stanzas = [c for c in poem_el if tag(c) == 'stanza']
         if stanzas:
             for stanza in stanzas:
-                stanza_lines = [text_of(v) for v in stanza if tag(v) == 'v']
+                stanza_lines = [inline_text(v) for v in stanza if tag(v) == 'v']
                 stanza_lines = [s for s in stanza_lines if s]
                 if stanza_lines:
                     lines.append('\n'.join(stanza_lines))
@@ -129,7 +167,7 @@ def parse_fb2_blocks(fb2_text):
         # Нет <stanza> — прямые <v> дети
         for v in poem_el:
             if tag(v) == 'v':
-                txt = text_of(v)
+                txt = inline_text(v)
                 if txt:
                     lines.append(txt)
         return '\n'.join(lines)
@@ -148,7 +186,7 @@ def parse_fb2_blocks(fb2_text):
                 if ct in ('poem', 'epigraph', 'cite'):
                     txt = rich_text_of(child)
                 else:
-                    txt = text_of(child)
+                    txt = inline_text(child)
                 if txt:
                     parts.append(txt)
             return '\n\n'.join(parts)
@@ -165,7 +203,7 @@ def parse_fb2_blocks(fb2_text):
                 blocks.append({'type': 'chapter', 'text': txt})
             return True
         if t == 'p':
-            txt = text_of(child)
+            txt = inline_text(child)
             if txt:
                 blocks.append({'type': 'paragraph', 'text': txt})
             return True
@@ -215,6 +253,63 @@ def parse_fb2_blocks(fb2_text):
         return blocks
 
     walk_container(body, True)
+
+    # ---- Примечания (сноски) ----
+    # Стандартно лежат в отдельном <body name="notes">: заголовок + секции
+    # <section id="n_1">. Добавляем их блоками в конец книги, чтобы на них
+    # можно было перейти по клику на сноску (как по оглавлению).
+    notes_body = next(
+        (el for el in root.iter() if tag(el) == 'body' and el.attrib.get('name') == 'notes'),
+        None,
+    )
+    if notes_body is not None:
+        def collect_paras(el, out):
+            """Собирает абзацы секции, пропуская поддерево <title> (номер
+            сноски уже извлечён отдельно)."""
+            for c in el:
+                ct = tag(c)
+                if ct == 'title' or ct == 'empty-line':
+                    continue
+                if ct == 'p':
+                    t = inline_text(c)
+                    if t:
+                        out.append(t)
+                elif ct in ('subtitle', 'v'):
+                    t = text_of(c)
+                    if t:
+                        out.append(t)
+                else:
+                    collect_paras(c, out)
+
+        for child in notes_body:
+            ct = tag(child)
+            if ct == 'title':
+                # Заголовок раздела «Примечания» — как глава (попадёт в оглавление)
+                txt = text_of(child)
+                if txt:
+                    blocks.append({'type': 'chapter', 'text': txt})
+            elif ct == 'section':
+                note_id = child.attrib.get('id', '')
+                title_el = next((c for c in child if tag(c) == 'title'), None)
+                title_txt = text_of(title_el) if title_el is not None else ''
+                paras = []
+                collect_paras(child, paras)
+                body_txt = '\n\n'.join(paras)
+                if title_txt and body_txt:
+                    sep = '' if title_txt.endswith(('.', '!', '?', ':')) else '.'
+                    full = f'{title_txt}{sep} {body_txt}'
+                else:
+                    full = body_txt or title_txt
+                if full:
+                    block = {'type': 'note', 'text': full}
+                    if note_id:
+                        block['noteId'] = note_id
+                    blocks.append(block)
+            elif ct == 'p':
+                txt = inline_text(child)
+                if txt:
+                    blocks.append({'type': 'paragraph', 'text': txt})
+
     return blocks
 
 

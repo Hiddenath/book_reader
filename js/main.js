@@ -4,6 +4,7 @@ import { Reader } from './reader.js?v=20260810d';
 import { Library } from './library.js?v=20260822a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
+import { Notes } from './notes.js?v=20260827b';
 import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260822a';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
 
@@ -44,6 +45,7 @@ const State = {
   restoringPosition: false,
   pageCache: new Map(),
   toc: null,   // экземпляр класса TOC
+  notes: null, // экземпляр класса Notes (сноски)
   settings: {
     fontSize: 18,
     lineHeight: 1.6,
@@ -111,10 +113,29 @@ function escapeHtml(text) {
   const value = text == null ? '' : String(text);
   return value
       .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+}
+
+/* Маркеры сносок из серверного парсера FB2:
+   \uE000 <noteId> \uE001 <текст ссылки> \uE002
+   Превращаем их в кликабельные ссылки-сноски. Текст уже экранирован. */
+function renderNoteRefs(escapedText) {
+  return escapedText.replace(
+    /\uE000([^\uE001]*)\uE001([^\uE002]*)\uE002/g,
+    (m, noteId, label) =>
+      `<a class="note-ref" data-note-id="${noteId}" data-note-label="${label}">${label}</a>`
+  );
+}
+
+/* Экранирует текст и делает сноски кликабельными. */
+function escapeAndLink(text) {
+  return renderNoteRefs(escapeHtml(text));
 }
 
 function renderBlocks(blocks, bookId = 'demo') {
-  return blocks.map(({ text, blockId, type = 'paragraph', level = 0, src }) => {
+  return blocks.map(({ text, blockId, type = 'paragraph', level = 0, src, noteId }) => {
     const escaped = escapeHtml(text);
     switch (type) {
       case 'chapter':
@@ -122,11 +143,14 @@ function renderBlocks(blocks, bookId = 'demo') {
       case 'subtitle':
         return `<h3 class="subtitle" data-block-id="${blockId}">${escaped}</h3>`;
       case 'epigraph':
-        return `<blockquote class="epigraph" data-block-id="${blockId}">${escaped}</blockquote>`;
+        return `<blockquote class="epigraph" data-block-id="${blockId}">${escapeAndLink(text)}</blockquote>`;
       case 'cite':
-        return `<blockquote class="cite" data-block-id="${blockId}">${escaped}</blockquote>`;
+        return `<blockquote class="cite" data-block-id="${blockId}">${escapeAndLink(text)}</blockquote>`;
       case 'poem':
-        return `<pre class="poem" data-block-id="${blockId}">${escaped}</pre>`;
+        return `<pre class="poem" data-block-id="${blockId}">${escapeAndLink(text)}</pre>`;
+      case 'note':
+        // Текст сноски (примечания): якорь для перехода по клику на ссылку
+        return `<p class="note-block" data-block-id="${blockId}" data-note-anchor="${noteId || ''}">${escapeAndLink(text)}</p>`;
       case 'image':
            // Картинка из FB2: src = id <binary>, грузим с сервера.
         // aspect-ratio из кэша размеров — чтобы пагинатор знал высоту ДО загрузки.
@@ -139,7 +163,7 @@ function renderBlocks(blocks, bookId = 'demo') {
         const style = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
         return `<figure class="book-image" data-block-id="${blockId}"><img src="${imgSrc}" alt="" style="${style}" /></figure>`;
       default:
-        return `<p data-block-id="${blockId}">${escaped}</p>`;
+        return `<p data-block-id="${blockId}">${escapeAndLink(text)}</p>`;
     }
   }).join('');
 }
@@ -339,6 +363,7 @@ function paginate(content, settings, bookId = 'book') {
       level: block.level,
       blockId,
       src: block.src,     // для картинок из FB2
+      noteId: block.noteId, // для блоков-сносок (якорь перехода)
       });
     currentBlocks.push({ blockId, text: block.text });
     currentH += blockH;
@@ -355,7 +380,19 @@ function paginate(content, settings, bookId = 'book') {
     pages.push('');
     pageBlocks.push([]);
   }
-  return { pages, toc, pageBlocks };
+
+  // Карта сносок: noteId -> индекс страницы, где лежит текст сноски.
+  // Ищем в HTML страниц якорь data-note-anchor="...".
+  const notePages = {};
+  for (let i = 0; i < pages.length; i++) {
+    const re = /data-note-anchor="([^"]+)"/g;
+    let m;
+    while ((m = re.exec(pages[i])) !== null) {
+      if (m[1] && !(m[1] in notePages)) notePages[m[1]] = i;
+    }
+  }
+
+  return { pages, toc, pageBlocks, notePages };
 }
 
 // Высота последнего измеренного чанка (заполняется в splitParagraph)
@@ -502,9 +539,9 @@ function getPagesForBook(book, settings) {
   if (State.pageCache.has(key)) return State.pageCache.get(key);
 
   const content = book?.blocks || book?.text || DEMO_TEXT;
-  const { pages, toc, pageBlocks } = paginate(content, settings, book?.id ?? 'demo');
-  State.pageCache.set(key, { pages, toc, pageBlocks });
-  return { pages, toc, pageBlocks };
+  const { pages, toc, pageBlocks, notePages } = paginate(content, settings, book?.id ?? 'demo');
+  State.pageCache.set(key, { pages, toc, pageBlocks, notePages });
+  return { pages, toc, pageBlocks, notePages };
 }
 
 function showLoading(show) {
@@ -516,7 +553,7 @@ function applySettings(reader) {
   applyVisualSettings();
 
   // Пересчёт страниц с сохранением позиции
-  const { pages, toc, pageBlocks } = getPagesForBook(State.currentBook, State.settings);
+  const { pages, toc, pageBlocks, notePages } = getPagesForBook(State.currentBook, State.settings);
   const sameBook = reader._bookId === State.currentBook?.id && reader._bookId !== undefined;
   reader._bookId = State.currentBook?.id;
   reader.setPages(pages, sameBook, pageBlocks);
@@ -524,6 +561,9 @@ function applySettings(reader) {
 
   // Обновляем оглавление книги
   if (toc) State.toc?.setItems(toc);
+
+  // Обновляем карту сносок (noteId -> страница)
+  State.notes?.setNotePages(notePages);
 }
 
 function scheduleReflow(reader) {
@@ -655,6 +695,16 @@ async function init() {
         book.blocks = data.blocks;
       }
     }
+
+    // Сбрасываем состояние сносок и заполняем их тексты (для тултипа)
+    State.notes?.reset();
+    if (Array.isArray(book.blocks)) {
+      const noteTexts = {};
+      for (const b of book.blocks) {
+        if (b.type === 'note' && b.noteId) noteTexts[b.noteId] = b.text;
+      }
+      State.notes?.setNoteTexts(noteTexts);
+    }
      // Предзагружаем картинки из FB2 (обложка/иллюстрации) и запоминаем их
      // размеры — иначе пагинатор измерит <img> как 0px (загрузка асинхронная).
     if (Array.isArray(book.blocks)) {
@@ -753,6 +803,7 @@ async function init() {
     debouncedSave(() => persistCurrentBookMeta());
   });
   State.toc = new TOC(reader);
+  State.notes = new Notes(reader);
 
   // Открытие одной правой панели закрывает другую
   const origBmOpen = bookmarks.open.bind(bookmarks);
@@ -766,7 +817,11 @@ async function init() {
   // Сохраняем прогресс при перелистывании
   reader.onPageChange = () => {
     bookmarks.onPageChange();
-    if (State.currentBook && reader.pages.length > 0 && !State.restoringPosition) {
+    // Пока открыт текст сноски (перешли по ссылке, но не вернулись «Назад»),
+    // позицию и прогресс НЕ сохраняем: при случайном закрытии книги останется
+    // место чтения со ссылкой на сноску, а не конец книги у примечаний.
+    const viewingNote = State.notes?.viewingNote === true;
+    if (State.currentBook && reader.pages.length > 0 && !State.restoringPosition && !viewingNote) {
       State.currentBook.progress = reader.progress.ratio;
       State.currentBook.anchor = captureCurrentAnchor();
       debouncedSave(() => persistCurrentBookMeta());

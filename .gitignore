@@ -1,7 +1,7 @@
 /.DS_Store
 /.архив
 /__pycache__
-.github
+/.github
 /.vscode
 /assets/gif/make_gif.py
 deploy.sh

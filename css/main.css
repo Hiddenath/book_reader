@@ -259,6 +259,13 @@ button {
   .nav-zone { width: 18%; }
 }
 
+/* Когда открыта библиотека, зоны листания не должны перехватывать клики:
+   .nav-zone (z-index 20) лежит поверх .library (z-index 2), и .nav-left
+   накрывала левую половину первой книги у края экрана. */
+.library.open ~ .nav-zone {
+  pointer-events: none;
+}
+
 /* ===== Панель настроек ===== */
 .settings-panel {
   position: fixed;

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BookHaven 3D</title>
   <link rel="icon" type="image/svg+xml" href="book.svg">
-  <link rel="stylesheet" href="css/main.css?v=20260810b">
-    <link rel="stylesheet" href="css/reader.css?v=20260824f">
+  <link rel="stylesheet" href="css/main.css?v=20260827a">
+    <link rel="stylesheet" href="css/reader.css?v=20260827a">
    <link rel="stylesheet" href="css/library.css?v=20260822a">
 </head>
 <body>
@@ -38,6 +38,9 @@
   <!-- 3D-сцена читалки -->
   <main class="scene" id="scene">
     <div class="book" id="book">
+      <!-- Твёрдая обложка под разворотом (hardcover) -->
+      <div class="book-shell" aria-hidden="true"></div>
+
       <!-- Статичные страницы под разворотом -->
       <div class="page page-under page-left" id="pageUnderLeft">
         <div class="page-content" id="contentUnderLeft"></div>

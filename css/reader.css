@@ -33,11 +33,50 @@
   /* Мягкая тень книги на «столе».
      ВАЖНО: filter здесь нельзя — он схлопывает preserve-3d у потомков,
      из-за чего обратная сторона листа растеризуется плоско (зеркальный текст). */
-  box-shadow: 0 30px 40px var(--shadow-book);
+  box-shadow: 30px 30px 30px var(--shadow-book);
   border-radius: 14px;
 }
 
 .scene:hover .book { transform: rotateX(4deg); }
+
+/* --- Твёрдая обложка (hardcover) под разворотом ---
+   Кожаный переплёт чуть больше блока страниц и отодвинут назад по Z.
+   Видны только выступ по периметру и нижний торец доски — как у
+   настоящей книги в твёрдом переплёте. ВАЖНО: preserve-3d обязателен,
+   иначе нижний торец (::after c rotateX) сплющится в невидимую линию.
+   Класс .book-shell (не .book-cover — тот занят карточками библиотеки). */
+.book-shell {
+  position: absolute;
+  /* Выступает за края страниц, как у настоящей твёрдой обложки (~2% высоты) */
+  top: -14px;
+  bottom: -14px;
+  left: -14px;
+  right: -14px;
+  border-radius: 18px;
+  transform: translateZ(-18px);
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  background:
+    /* блик освещения */
+    radial-gradient(120% 90% at 32% 18%, rgba(255,255,255,0.12), transparent 55%),
+    /* паз корешка в центре — виден на верхнем и нижнем выступе */
+    linear-gradient(to right, transparent calc(50% - 16px), rgba(0,0,0,0.45) 0%, transparent calc(50% + 16px)),
+    /* тонкая зернистость кожи */
+    repeating-linear-gradient(115deg, rgba(255,255,255,0.025) 0 2px, rgba(0,0,0,0.035) 2px 4px),
+    linear-gradient(135deg, var(--cover-a), var(--cover-b));
+  box-shadow: inset 0 0 24px rgba(0,0,0,0.35);
+  pointer-events: none;
+}
+
+/* Тонкая золотая рамка по краю обложки (видна на выступе) */
+.book-shell::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 14px;
+  border: 1.5px solid var(--cover-line);
+  opacity: 0.8;
+}
 
 /* --- Одностраничный режим (вытянутые экраны) --- */
 /* Класс ставится JS по matchMedia: узкие или портретные окна.

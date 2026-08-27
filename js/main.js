@@ -1,16 +1,13 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
 import { Reader } from './reader.js?v=20260810d';
-import { Library } from './library.js?v=20260822a';
+import { Library } from './library.js?v=20260827a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
 import { Notes } from './notes.js?v=20260827b';
-import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260822a';
+import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260827a';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
-
-// API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
-const API_PORT = 8001;
-const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
+import { SERVER_URL, withAuth } from './config.js?v=20260827a';
 
 // Кэш размеров картинок из FB2: src (id <binary>) -> { w, h } (natural dimensions).
 // Нужен, чтобы пагинатор знал высоту картинки ДО её загрузки (img грузится асинхронно).
@@ -25,7 +22,7 @@ function preloadBookImages(blocks, bookId) {
   for (const b of blocks) {
     if (b.type !== 'image' || !b.src) continue;
     if (imageSizeCache.has(b.src)) continue;
-    const url = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(b.src)}`;
+      const url = withAuth(`${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(b.src)}`);
     tasks.push(new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -156,7 +153,7 @@ function renderBlocks(blocks, bookId = 'demo') {
         // aspect-ratio из кэша размеров — чтобы пагинатор знал высоту ДО загрузки.
         // Высота figure задана ЯВНО (включая padding 1.2em сверху и снизу):
         // иначе измеритель и реальный рендер расходятся на ~2.4em → overflow.
-        const imgSrc = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`;
+        const imgSrc = withAuth(`${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`);
         // aspect-ratio на img: измеритель знает высоту ДО загрузки,
         // а max-height (CSS) сжимает слишком высокие картинки.
         const dim = src ? imageSizeCache.get(src) : null;

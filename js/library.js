@@ -3,11 +3,8 @@
    Метаданные (название, автор, прогресс, закладки) — в meta.json книги. */
 
 import { parseBook } from './parsers.js?v=20260806d';
-import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260822a';
-
-// API-сервер (для загрузки обложек из FB2)
-const API_PORT = 8001;
-const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
+import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260827a';
+import { SERVER_URL, withAuth } from './config.js?v=20260827a';
 
 // Палитры обложек: выбираются по порядковому номеру книги в библиотеке
 const COVER_PALETTES = [
@@ -182,7 +179,7 @@ export class Library {
        // Обложка из FB2 (если есть) — картинка поверх градиента
       const hasCover = book?.hasCover === true;
       const coverImg = hasCover
-         ? `<img class="book-cover-img" src="${SERVER_URL}/books/${encodeURIComponent(book.id)}/cover" alt="" loading="lazy" />`
+         ? `<img class="book-cover-img" src="${withAuth(`${SERVER_URL}/books/${encodeURIComponent(book.id)}/cover`)}" alt="" loading="lazy" />`
          : '';
       card.innerHTML = `
          <div class="book-cover${hasCover ? ' has-image' : ''}" style="--cover-a:${coverA};--cover-b:${coverB}">

@@ -2,12 +2,12 @@
    Глобальные настройки — в localStorage + data/state.json на сервере.
    Прогресс и закладки книги — точечно в books/<id>/meta.json. */
 
-const LS_KEY = 'bookhaven3d';
+// API-сервер: по умолчанию хост страницы + порт 8001 (бесплатная версия).
+// В hosted-версии window.BOOKHAVEN_CONFIG подменяет URL и добавляет токен —
+// см. js/config.js.
+import { SERVER_URL, authHeaders } from './config.js?v=20260827a';
 
-// API-сервер: используем хост страницы (чтобы работало и с телефона по сети),
-// порт API фиксирован — 8001.
-const API_PORT = 8001;
-const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
+const LS_KEY = 'bookhaven3d';
 
 function buildStateSnapshot(settings, books, lastOpenedBookId = null) {
   return {
@@ -37,7 +37,9 @@ export function loadState() {
 function fetchWithTimeout(url, options = {}, timeoutMs = 500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal })
+  // authHeaders() — пустой объект в бесплатной версии, Bearer-токен в hosted
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
+  return fetch(url, { ...options, headers, signal: controller.signal })
     .finally(() => clearTimeout(timer));
 }
 

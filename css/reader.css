@@ -104,7 +104,9 @@
 /* Левая страница — пустая подложка (контент скрыт) */
 .book.single-page .page-left .page-content { visibility: hidden; }
 
-.book.single-page .page-right { border-radius: 10px; }
+/* Правая (текстовая) страница: левый край у корешка — прямой, без
+   скруглений; скруглён только внешний правый край. */
+.book.single-page .page-right { border-radius: 0 10px 10px 0; }
 
 /* В одностраничном режиме текст не должен подходить к нижней грани:
    книга наклонена (rotateX) и нижний край ближе к зрителю,
@@ -120,6 +122,11 @@
   left: var(--page-w);
   border-radius: 10px;
 }
+
+/* Грани листа в одностраничном режиме: левый край у корешка — прямой,
+   без скруглений (как у текстовой .page-right). */
+.book.single-page .flip-front { border-radius: 0 10px 10px 0; }
+.book.single-page .flip-back { border-radius: 10px 0 0 10px; }
 
 /* Тени в одностраничном режиме */
 .book.single-page .cast-shadow.on-left { display: none; }

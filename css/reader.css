@@ -111,10 +111,12 @@
 /* В одностраничном режиме текст не должен подходить к нижней грани:
    книга наклонена (rotateX) и нижний край ближе к зрителю,
    увеличенный нижний отступ убирает эффект «текст выходит за грань».
-   То же для анимируемого листа (flip-face использует .page-content). */
+   Верх/низ — от настройки --vmargins с теми же смещениями, что в
+   пагинаторе (−8/+42). То же для анимируемого листа (flip-face
+   использует .page-content). */
 .book.single-page .page-content {
-  padding-top: 40px;
-  padding-bottom: 90px;
+  padding-top: calc(var(--vmargins, 48px) - 8px);
+  padding-bottom: calc(var(--vmargins, 48px) + 42px);
 }
 
 /* Лист покрывает правую страницу */
@@ -185,7 +187,9 @@
 .page-content {
   position: absolute;
   inset: 0;
-  padding: 48px var(--margins, 60px);
+  /* Вертикальные отступы --vmargins настраиваются слайдером
+     (горизонтальные --margins — отдельной настройкой) */
+  padding: var(--vmargins, 48px) var(--margins, 60px);
   font-family: var(--font-serif);
   font-size: var(--font-size, 18px);
   line-height: var(--line-height, 1.6);

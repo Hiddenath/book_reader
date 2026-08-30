@@ -63,6 +63,12 @@ export async function saveState(state) {
         localStorage.setItem(LS_KEY, JSON.stringify(data.state));
         return { stale: true, state: data.state };
       }
+      // Новый штамп с сервера: запоминаем, чтобы следующий persist
+      // не был отвергнут как устаревший.
+      if (typeof data?.updatedAt === 'number') {
+        const local = { ...state, updatedAt: data.updatedAt };
+        localStorage.setItem(LS_KEY, JSON.stringify(local));
+      }
     }
     return { ok: true };
   } catch {

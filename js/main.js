@@ -53,6 +53,7 @@ const State = {
     fontSize: 18,
     lineHeight: 1.6,
     margins: 60,
+    vmargins: 48,
     theme: 'paper',
     pageFlipAnimation: true,
     hyphenation: true,
@@ -198,11 +199,14 @@ function paginate(content, settings, bookId = 'book') {
   const pageW = book.offsetWidth / 2;
   const pageH = book.offsetHeight;
 
-  // Отступы текста на странице: в single-режиме верхний 40px и нижний увеличен,
-  // в двойном — стандартные 48/48 (должны совпадать с CSS padding страницы).
+  // Отступы текста на странице: вертикальные берём из настроек (vmargins).
+  // В single-режиме верх чуть меньше, низ увеличен (компенсация наклона
+  // rotateX — нижний край страницы ближе к зрителю). Значения должны
+  // совпадать с CSS padding .page-content (см. --vmargins в reader.css).
   const single = book.classList.contains('single-page');
-  const padTop = single ? 40 : 48;
-  const padBottom = single ? 90 : 48;
+  const vm = settings.vmargins ?? 48;
+  const padTop = single ? vm - 8 : vm;
+  const padBottom = single ? vm + 42 : vm;
 
   const contentW = pageW - settings.margins * 2;
   const contentH = pageH - padTop - padBottom;
@@ -519,6 +523,7 @@ function applyVisualSettings() {
   book.style.setProperty('--font-size', `${s.fontSize}px`);
   book.style.setProperty('--line-height', s.lineHeight);
   book.style.setProperty('--margins', `${s.margins}px`);
+  book.style.setProperty('--vmargins', `${s.vmargins ?? 48}px`);
   document.documentElement.dataset.theme = s.theme;
   // Перенос слов: управляется классом на книге (hyphens: auto/manual в CSS)
   book.classList.toggle('no-hyphens', s.hyphenation === false);
@@ -534,11 +539,13 @@ function syncSettingsUI() {
   const font = document.getElementById('setFontSize');
   const line = document.getElementById('setLineHeight');
   const margins = document.getElementById('setMargins');
+  const vmargins = document.getElementById('setVMargins');
   const flip = document.getElementById('setPageFlipAnimation');
   const hyph = document.getElementById('setHyphenation');
   if (font) font.value = s.fontSize;
   if (line) line.value = s.lineHeight;
   if (margins) margins.value = s.margins;
+  if (vmargins) vmargins.value = s.vmargins ?? 48;
   if (flip) flip.checked = s.pageFlipAnimation !== false;
   if (hyph) hyph.checked = s.hyphenation !== false;
 }
@@ -550,7 +557,7 @@ function getPageCacheKey(book, settings) {
   // Размер книги в ключе: при изменении ширины окна макет должен перестраиваться,
   // иначе закэшированные страницы (старой ширины) выходят за нижнюю грань.
   const size = bookEl ? `${bookEl.offsetWidth}x${bookEl.offsetHeight}` : '0x0';
-  return `${bookId}|${settings.fontSize}|${settings.lineHeight}|${settings.margins}|${mode}|${size}`;
+  return `${bookId}|${settings.fontSize}|${settings.lineHeight}|${settings.margins}|${settings.vmargins ?? 48}|${mode}|${size}`;
 }
 
 function getPagesForBook(book, settings) {
@@ -616,6 +623,7 @@ function persist(library) {
       }
     } else if (result?.ok) {
       // Запись прошла — запоминаем новый штамп из локальной копии
+      // (saveState уже обновил его в localStorage ответом сервера)
       const saved = loadState();
       knownUpdatedAt = saved?.updatedAt ?? knownUpdatedAt;
     }
@@ -953,6 +961,12 @@ async function init() {
   });
   document.getElementById('setMargins').addEventListener('input', (e) => {
     State.settings.margins = +e.target.value;
+    applyVisualSettings();
+    scheduleReflow(reader);
+    schedulePersist(library);
+  });
+  document.getElementById('setVMargins').addEventListener('input', (e) => {
+    State.settings.vmargins = +e.target.value;
     applyVisualSettings();
     scheduleReflow(reader);
     schedulePersist(library);

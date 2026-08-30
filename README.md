@@ -81,7 +81,7 @@
 
 ### Settings
 
-- 🔤 **Font size**, line height, margins
+- 🔤 **Font size**, line height, horizontal & vertical margins
 - 🎨 **5 themes**: Paper, Sepia, Night, Forest, Sky
 - 🌙 **Immersive mode** — clicking the center hides all panels
 

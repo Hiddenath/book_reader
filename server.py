@@ -529,7 +529,10 @@ class APIHandler(BaseHTTPRequestHandler):
                 # другой браузер). Отдаём актуальное — клиент подтянется.
                 self._send_json({'ok': False, 'stale': True, 'state': load_state()})
                 return
-            self._send_json({'ok': True})
+            # Отдаём новый штамп: иначе клиент запомнит старый из localStorage
+            # и его следующий persist будет отвергнут как stale (настройки
+            # «откатывались» к серверным после второго сохранения подряд).
+            self._send_json({'ok': True, 'updatedAt': load_state().get('updatedAt', 0)})
 
     def do_DELETE(self):
         from urllib.parse import unquote

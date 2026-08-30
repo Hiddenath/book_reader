@@ -12,9 +12,11 @@ import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809
 const API_PORT = 8001;
 const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
 
-// Кэш размеров картинок из FB2: src (id <binary>) -> { w, h } (natural dimensions).
+// Кэш размеров картинок из FB2: ключ «bookId|src» (id <binary> повторяется
+// между книгами — «cover.jpg» есть почти в каждой) -> { w, h }.
 // Нужен, чтобы пагинатор знал высоту картинки ДО её загрузки (img грузится асинхронно).
 const imageSizeCache = new Map();
+const imgCacheKey = (bookId, src) => `${bookId}|${src}`;
 
 /**
  * Предзагружает все картинки книги и сохраняет их natural-размеры в кэш.
@@ -24,12 +26,13 @@ function preloadBookImages(blocks, bookId) {
   const tasks = [];
   for (const b of blocks) {
     if (b.type !== 'image' || !b.src) continue;
-    if (imageSizeCache.has(b.src)) continue;
+    const key = imgCacheKey(bookId, b.src);
+    if (imageSizeCache.has(key)) continue;
     const url = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(b.src)}`;
     tasks.push(new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
-        imageSizeCache.set(b.src, { w: img.naturalWidth, h: img.naturalHeight });
+        imageSizeCache.set(key, { w: img.naturalWidth, h: img.naturalHeight });
         resolve();
       };
       img.onerror = () => resolve();   // не блокируем при ошибке
@@ -159,7 +162,7 @@ function renderBlocks(blocks, bookId = 'demo') {
         const imgSrc = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`;
         // aspect-ratio на img: измеритель знает высоту ДО загрузки,
         // а max-height (CSS) сжимает слишком высокие картинки.
-        const dim = src ? imageSizeCache.get(src) : null;
+        const dim = src ? imageSizeCache.get(imgCacheKey(bookId, src)) : null;
         const style = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
         return `<figure class="book-image" data-block-id="${blockId}"><img src="${imgSrc}" alt="" style="${style}" /></figure>`;
       default:
@@ -278,7 +281,7 @@ function paginate(content, settings, bookId = 'book') {
     // В этом случае считаем высоту из кэша размеров; заодно ограничиваем
     // высоту страницы (CSS max-height сжимает рендер так же).
     if (block.type === 'image') {
-      const dim = block.src ? imageSizeCache.get(block.src) : null;
+      const dim = block.src ? imageSizeCache.get(imgCacheKey(bookId, block.src)) : null;
       if (dim && dim.w && dim.h) {
         const pad = settings.fontSize * 2.4;                  // padding figure
         const maxImgH = contentH - pad;
@@ -708,7 +711,7 @@ async function init() {
      // Предзагружаем картинки из FB2 (обложка/иллюстрации) и запоминаем их
      // размеры — иначе пагинатор измерит <img> как 0px (загрузка асинхронная).
     if (Array.isArray(book.blocks)) {
-      const hadNew = book.blocks.some((b) => b.type === 'image' && b.src && !imageSizeCache.has(b.src));
+      const hadNew = book.blocks.some((b) => b.type === 'image' && b.src && !imageSizeCache.has(imgCacheKey(book.id, b.src)));
       await preloadBookImages(book.blocks, book.id);
       // Если размеры получены впервые — сбрасываем кэш страниц: в нём
       // картинки могли быть «схлопнуты» в 0px (измерение до загрузки).

@@ -25,7 +25,59 @@ ROOT = Path(__file__).parent
 DATA_FILE = ROOT / 'data' / 'state.json'
 BOOKS_DIR = ROOT / 'books'
 
+# Максимальный размер тела запроса (байт). Книга целиком (FB2 ~5-10 МБ)
+# вписывается в лимит с запасом; всё, что больше, — отвергаем, чтобы
+# запрос не выедал память сервера.
+MAX_BODY_BYTES = 64 * 1024 * 1024
+
+# Разрешённые расширения файлов книг (точка в нижнем регистре)
+BOOK_EXTS = ('.fb2', '.txt', '.epub')
+
 QUIET = False  # --quiet отключает логирование
+
+
+def safe_book_id(book_id):
+    """Валидирует id книги (имя файла без расширения).
+
+    Разрешаем только «безопасные» символы имени файла: буквы, цифры,
+    дефис, подчёркивание, пробел, скобки и кириллицу. Запрещаем
+    '/', '\\', '..' и прочие спецсимволы — это закрывает path traversal
+    через id книги (GET /books/<id>/text, DELETE /books/<id> и т.д.).
+    """
+    if not book_id or not isinstance(book_id, str):
+        return None
+    if book_id in ('.', '..'):
+        return None
+    if any(sep in book_id for sep in ('/', '\\', '\x00')):
+        return None
+    # Управляющие символы и слишком длинные имена — мимо
+    if len(book_id) > 255 or any(ord(c) < 32 for c in book_id):
+        return None
+    return book_id
+
+
+def sanitize_filename(name):
+    """Очищает имя файла, приходящее от клиента (originalName).
+
+    1) Берём только последнюю компоненту пути (срезает ../ и подкаталоги);
+    2) запрещаем точку/двоеточие в начале (скрытые файлы, Windows-устройства);
+    3) вырезаем управляющие символы.
+    Возвращает безопасное имя или None, если после очистки ничего не осталось.
+    """
+    if not name or not isinstance(name, str):
+        return None
+    # Только basename — «../evil» → «evil», «a/b» → «b»
+    name = name.replace('\\', '/').split('/')[-1]
+    if not name or name in ('.', '..'):
+        return None
+    if name[0] in ('.', ' '):  # без скрытых файлов и ведущих пробелов
+        return None
+    # Управляющие символы — вырезаем
+    name = ''.join(c for c in name if ord(c) >= 32)
+    name = name.strip()
+    if not name or len(name) > 255:
+        return None
+    return name
 
 
 def now_str():
@@ -374,9 +426,14 @@ class APIHandler(BaseHTTPRequestHandler):
         read(n) может вернуть МЕНЬШЕ n байт, если соединение оборвалось
         (таймаут на клиенте, обрыв сети) — поэтому читаем циклом до конца.
         """
-        length = int(self.headers.get('Content-Length', '0'))
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            return None, {'error': 'Некорректный Content-Length'}
         if length <= 0:
             return {}, None
+        if length > MAX_BODY_BYTES:
+            return None, {'error': f'Тело запроса слишком большое (лимит {MAX_BODY_BYTES // (1024 * 1024)} МБ)'}
 
         try:
             data = b''
@@ -519,6 +576,10 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def _get_book_meta(self, book_id):
         """Возвращает метаданные книги (из sidecar meta.json)."""
+        book_id = safe_book_id(book_id)
+        if book_id is None:
+            self._send_json({'error': 'Invalid book id'}, status=400)
+            return
         meta_file = self._find_book_meta_file(book_id)
 
         if not meta_file or not meta_file.exists():
@@ -531,6 +592,10 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def _get_book_text(self, book_id):
         """Возвращает полный текст книги (FB2 парсится на лету)."""
+        book_id = safe_book_id(book_id)
+        if book_id is None:
+            self._send_json({'error': 'Invalid book id'}, status=400)
+            return
         content_file = self._find_book_content_file(book_id)
 
         if content_file is None:
@@ -542,12 +607,21 @@ class APIHandler(BaseHTTPRequestHandler):
             blocks = parse_fb2_blocks(content_file.read_text(encoding='utf-8'))
             self._send_json({'blocks': blocks, 'format': 'fb2'})
         else:
-            # TXT / EPUB — обычный текст
-            text = content_file.read_text(encoding='utf-8')
+            # TXT — обычный текст. Бинарный EPUB (не сконвертированный в txt
+            # клиентом) прочитать как UTF-8 нельзя — честно отвечаем ошибкой.
+            try:
+                text = content_file.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                self._send_json({'error': 'Файл книги не является текстовым (бинарный EPUB?)'}, status=422)
+                return
             self._send_json({'text': text})
 
     def _get_book_cover(self, book_id):
         """Отдаёт обложку книги (из <coverpage> FB2) как картинку."""
+        book_id = safe_book_id(book_id)
+        if book_id is None:
+            self._send_json({'error': 'Invalid book id'}, status=400)
+            return
         content_file = self._find_book_content_file(book_id)
         if content_file is None or content_file.suffix.lower() != '.fb2':
             self._send_json({'error': 'No cover'}, status=404)
@@ -569,6 +643,11 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def _get_book_image(self, book_id, img_name):
         """Отдаёт картинку из тела книги (по id <binary>)."""
+        book_id = safe_book_id(book_id)
+        img_name = safe_book_id(img_name)
+        if book_id is None or img_name is None:
+            self._send_json({'error': 'Invalid request'}, status=400)
+            return
         content_file = self._find_book_content_file(book_id)
         if content_file is None or content_file.suffix.lower() != '.fb2':
             self._send_json({'error': 'Not found'}, status=404)
@@ -603,10 +682,14 @@ class APIHandler(BaseHTTPRequestHandler):
             return
 
         format_ = book.get('format', 'txt')
+        if format_ not in ('fb2', 'txt', 'epub'):
+            format_ = 'txt'
         ext = '.fb2' if format_ == 'fb2' else '.txt'
 
-         # Имя файла = оригинальное имя книги (без потери), при конфликте — суффикс
-        original_name = book.get('originalName') or f"{book.get('title', 'book')}{ext}"
+         # Имя файла = оригинальное имя книги (без потери), при конфликте — суффикс.
+         # sanitize_filename срезает пути (../) и опасные имена — защита от
+         # записи файла за пределы books/.
+        original_name = sanitize_filename(book.get('originalName')) or sanitize_filename(book.get('title')) or f'book{ext}'
 
          # Запрос без originalName — подозрительно: такую книгу могла отправить
          # миграция из state.json, а имя файла построено из title → возможный дубликат
@@ -616,7 +699,13 @@ class APIHandler(BaseHTTPRequestHandler):
         if not original_name.lower().endswith(ext):
             original_name += ext
 
+        # Финальная проверка: файл обязан оказаться внутри books/
         content_file, stem = self._unique_file(BOOKS_DIR, original_name)
+        try:
+            content_file.resolve().relative_to(BOOKS_DIR.resolve())
+        except ValueError:
+            self._send_json({'error': 'Недопустимое имя файла'}, status=400)
+            return
 
          # Логируем конфликт имён — так видно момент создания дубликата
         ip = self.client_address[0] if self.client_address else '?'
@@ -674,7 +763,10 @@ class APIHandler(BaseHTTPRequestHandler):
     def _update_book_meta(self, book_id):
         """Обновляет прогресс/закладки книги в её meta.json."""
         from urllib.parse import unquote
-        book_id = unquote(book_id)
+        book_id = safe_book_id(unquote(book_id))
+        if book_id is None:
+            self._send_json({'error': 'Invalid book id'}, status=400)
+            return
 
         payload, err = self._read_json_body()
         if err:
@@ -733,6 +825,10 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def _delete_book(self, book_id):
         """Удаляет файл книги и sidecar meta.json из папки books/."""
+        book_id = safe_book_id(book_id)
+        if book_id is None:
+            self._send_json({'error': 'Invalid book id'}, status=400)
+            return
         content_file = self._find_book_content_file(book_id)
         if content_file is None:
             self._send_json({'error': 'Book not found'}, status=404)
@@ -769,10 +865,38 @@ class APIHandler(BaseHTTPRequestHandler):
 
 
 class StaticHandler(SimpleHTTPRequestHandler):
-    """Статический файловый сервер с правильными MIME-типами."""
+    """Статический файловый сервер с правильными MIME-типами.
+
+    Отдаёт ТОЛЬКО публичную часть проекта: index.html, css/, js/, lib/,
+    assets/, book.svg. Серверный код (server.py), данные (data/),
+    метаданные книг (books/) и .git наружу не отдаются.
+    """
+
+    # Префиксы путей, которые можно отдавать наружу
+    PUBLIC_PREFIXES = ('css/', 'js/', 'lib/', 'assets/')
+    # Точечные файлы в корне, которые можно отдавать
+    PUBLIC_ROOT_FILES = {'index.html', 'book.svg', 'page-flip-sound.mp3', 'favicon.ico'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def translate_path(self, path):
+        """Пропускает только публичные пути; остальное — 404.
+        Вызывается из do_GET/do_HEAD для каждого запроса."""
+        import urllib.parse
+        # Срезаем query-string и нормализуем: '/js/main.js?v=1' → 'js/main.js'
+        rel = urllib.parse.urlsplit(path).path.lstrip('/')
+        rel = urllib.parse.unquote(rel)
+        # Корень сайта ('/') — это index.html
+        if rel == '':
+            rel = 'index.html'
+        allowed = (
+            rel in self.PUBLIC_ROOT_FILES
+            or any(rel.startswith(p) for p in self.PUBLIC_PREFIXES)
+        )
+        if not allowed:
+            return str(ROOT / '__forbidden__')  # несуществующий путь → 404
+        return super().translate_path(path)
 
     def end_headers(self):
         # Кэширование для статики

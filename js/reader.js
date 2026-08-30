@@ -84,6 +84,10 @@ export class Reader {
   }
 
   goTo(pageIndex) {
+    // Во время анимации перелистывания переход «вперёд» запрещён:
+    // завершающий кадр анимации сам сдвинет разворот на ±2, и прыжок
+    // по оглавлению/закладке был бы перезаписан (получалась не та страница).
+    if (this.isAnimating) return;
     const idx = Math.max(0, Math.min(pageIndex, this.pages.length - 1));
     let target;
     if (this.singlePage) {
@@ -354,6 +358,8 @@ export class Reader {
 
   _startDrag(e, direction) {
     this.isDragging = true;
+    this._dragDeg = null;   // сброс прошлого перетаскивания: без этого
+                            // «тап без движения» завершал прошлый флип
     const forward = direction === 'forward';
     const rect = this.book.getBoundingClientRect();
 

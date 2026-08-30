@@ -90,7 +90,7 @@ export async function loadBooksFromServer() {
 
 export async function loadBookText(bookId) {
   try {
-    const res = await fetchWithTimeout(`${SERVER_URL}/books/${bookId}/text`, {}, 30000);
+    const res = await fetchWithTimeout(`${SERVER_URL}/books/${encodeURIComponent(bookId)}/text`, {}, 30000);
     if (!res.ok) return null;
     const data = await res.json();
     return data; // { text, format? }
@@ -121,9 +121,12 @@ export async function saveBookToServer(book) {
 
 export async function deleteBookFromServer(bookId) {
   try {
-    const res = await fetchWithTimeout(`${SERVER_URL}/books/${bookId}`, {
+    // Таймаут 5000мс (как у списка книг): 700мс на удалённом сервере
+    // обрывали запрос — книга исчезала локально, но оставалась на сервере
+    // и возвращалась после перезагрузки.
+    const res = await fetchWithTimeout(`${SERVER_URL}/books/${encodeURIComponent(bookId)}`, {
       method: 'DELETE',
-    }, 700);
+    }, 5000);
     return res.ok;
   } catch {
     return false;

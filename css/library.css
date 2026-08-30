@@ -130,24 +130,13 @@
   z-index: 1;
 }
 
-/* Когда есть картинка-обложка — тёмный градиент снизу для читаемости текста */
+/* Когда есть картинка-обложка — тёмный градиент снизу (глубина корешка) */
 .book-cover.has-image::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.15) 45%, transparent 70%);
+  background: linear-gradient(to top, rgba(0,0,0,0.35) 0%, transparent 40%);
   z-index: 2;
-}
-
-.book-cover.has-image .book-cover-title,
-.book-cover.has-image .book-cover-author {
-  position: relative;
-  z-index: 3;
-}
-
-/* С картинкой-обложкой — заголовок и автор внизу, под градиентом */
-.book-cover.has-image {
-  justify-content: flex-end;
 }
 
 /* Корешок на обложке */
@@ -159,25 +148,6 @@
   bottom: 0;
   width: 8px;
   background: linear-gradient(to right, rgba(0,0,0,0.25), transparent);
-}
-
-.book-cover-title {
-  font-family: var(--font-serif);
-  font-size: 17px;
-  line-height: 1.3;
-  color: rgba(255,255,255,0.95);
-  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-}
-
-.book-cover-author {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  color: rgba(255,255,255,0.75);
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .book-meta {

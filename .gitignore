@@ -1,12 +1,21 @@
+!books/.gitkeep
+!data/.gitkeep
+# Книги: содержимое не храним, но папку держим в репозитории (через .gitkeep)
+.DS_Store
 /.DS_Store
-/.архив
-/__pycache__
 /.github
 /.vscode
+/.архив
+/__pycache__
 /assets/gif/make_gif.py
-deploy.sh
-# Книги: содержимое не храним, но папку держим в репозитории (через .gitkeep)
 books/*
-!books/.gitkeep
 data/*
-!data/.gitkeep
+deploy.sh
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.pyc

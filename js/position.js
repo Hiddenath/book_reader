@@ -9,7 +9,7 @@ function normalizePreview(text) {
   return (text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
-export function computeAnchorFromVisibleBlocks(blocks, viewport) {
+function computeAnchorFromVisibleBlocks(blocks, viewport) {
   const visible = blocks
     .map((block) => ({
       blockId: block.blockId,
@@ -56,7 +56,7 @@ export function buildPositionAnchor(root, viewport) {
 /* ---------- Поиск страницы по якорю ---------- */
 
 /** Нормализует текст для сравнения: схлопывает пробелы/переносы. */
-export function normalizeText(text) {
+function normalizeText(text) {
   return (text || '').replace(/\s+/g, ' ').trim();
 }
 

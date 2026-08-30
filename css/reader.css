@@ -82,18 +82,18 @@
 /* Класс ставится JS по matchMedia: узкие или портретные окна.
    Текст показывается только на правой странице,
    левая остаётся видимой пустой подложкой (лист не «появляется из ниоткуда»).
-   Книга сдвинута влево (translateX -25%), чтобы правая страница была по центру.
+   Книга сдвинута влево (translateX -45.6%), чтобы правая страница была по центру.
    Страница максимально использует площадь: 5% отступы от краёв экрана. */
 .book.single-page {
   --page-w: min(85vw, 770px);
   --page-h: 90vh;
   width: calc(var(--page-w) * 2);
   height: var(--page-h);
-  transform: translateX(-45%) rotateX(3deg);
+  transform: translateX(-45.6%) rotateX(3deg);
 }
 
 .scene:hover .book.single-page {
-  transform: translateX(-45%) rotateX(2deg);
+  transform: translateX(-45.6%) rotateX(2deg);
 }
 
 /* На очень широких экранах ограничиваем ширину страницы */

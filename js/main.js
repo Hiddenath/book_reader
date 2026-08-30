@@ -578,12 +578,25 @@ function showLoading(show) {
 function applySettings(reader) {
   applyVisualSettings();
 
-  // Пересчёт страниц с сохранением позиции
+  // Якорь ДО пересчёта: то же предложение должно остаться вверху страницы
+  // и после новой вёрстки. Без этого позиция сохранялась ПРОПОРЦИЕЙ
+  // (50% старой книги ≠ 50% новой) и текст «уезжал» при движении слайдера.
+  const anchorBefore = State.currentBook && reader.pages.length > 0
+    ? captureCurrentAnchor()
+    : null;
+
+  // Пересчёт страниц
   const { pages, toc, pageBlocks, notePages } = getPagesForBook(State.currentBook, State.settings);
   const sameBook = reader._bookId === State.currentBook?.id && reader._bookId !== undefined;
   reader._bookId = State.currentBook?.id;
   reader.setPages(pages, sameBook, pageBlocks);
   reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
+
+  // Восстанавливаем позицию по якорю (то же предложение вверху страницы)
+  if (anchorBefore?.blockId) {
+    const page = resolveAnchorPage(anchorBefore, reader.pages, pageBlocks);
+    if (page >= 0) reader.goTo(page);
+  }
 
   // Обновляем оглавление книги
   if (toc) State.toc?.setItems(toc);

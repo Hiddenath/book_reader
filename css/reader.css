@@ -5,7 +5,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  perspective: 2200px;
+  perspective: clamp(1400px, 203.7vh, 3000px);
   perspective-origin: 50% 42%;
   pointer-events: none;
   z-index: 1;
@@ -17,8 +17,9 @@
 
 /* --- Книга --- */
 .book {
-  --page-w: min(38vw, 520px);
-  --page-h: min(78vh, 720px);
+  --page-wh: 1.25;
+  --page-w: min(38vw, 1280px);
+  --page-h: calc(var(--page-w) * var(--page-wh));
 
   position: relative;
   width: calc(var(--page-w) * 2);

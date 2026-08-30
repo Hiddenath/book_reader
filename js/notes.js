@@ -4,7 +4,7 @@
    При наведении на ссылку появляется всплывающая подсказка с текстом сноски.
    Бокового меню нет — только переходы туда-обратно и тултип. */
 
-import { buildPositionAnchor } from './position.js?v=20260809c';
+import { buildPositionAnchor } from './position.js?v=20260830a';
 
 export class Notes {
   constructor(reader) {

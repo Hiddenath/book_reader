@@ -1,44 +1,28 @@
 // Вспомогательные функции для работы с якорями чтения.
 // Якорь = блок текста (по data-block-id) + смещение внутри блока.
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function normalizePreview(text) {
   return (text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
-function computeAnchorFromVisibleBlocks(blocks, viewport) {
-  const visible = blocks
-    .map((block) => ({
-      blockId: block.blockId,
-      rect: block.rect,
-      text: block.text ?? '',
-      previewText: normalizePreview(block.text ?? ''),
-    }))
-    .filter((item) => item.rect.bottom >= viewport.top && item.rect.top <= viewport.bottom);
-
-  if (visible.length === 0) return null;
-
-  visible.sort((a, b) => a.rect.top - b.rect.top);
-
-  // Блок, на котором сосредоточен взгляд: содержащий вертикальный центр окна.
-  // Так закладка привязывается к месту чтения, а не к началу страницы.
-  const centerY = (viewport.top + viewport.bottom) / 2;
-  const target = visible.find((item) => item.rect.top <= centerY && item.rect.bottom >= centerY) ?? visible[0];
-  const blockHeight = Math.max(target.rect.height, 1);
-  const offsetRatio = clamp((centerY - target.rect.top) / blockHeight, 0, 1);
-
-  return {
-    blockId: target.blockId,
-    offsetRatio,
-    previewText: target.previewText,
-  };
-}
-
 export function buildPositionAnchor(root, viewport) {
-  const blocks = Array.from(root.querySelectorAll('[data-block-id]'))
+  /* Якорь = ПЕРВОЕ предложение (блок) на развороте:
+     - в двухстраничном режиме разворот начинается с ЛЕВОЙ страницы;
+     - в одностраничном — с (единственной) правой.
+
+     Почему не «блок в центре окна», как раньше: центр окна в single- и
+     double-режимах попадает в разные места текста, и при переключении
+     режима часть текста перечитывалась или пропускалась. Якорь-начало
+     разворота указывает на одно и то же предложение в обоих режимах:
+     читатель продолжает ровно с того места, где остановился.
+
+     Пагинатор режет длинные абзацы по ПРЕДЛОЖЕНИЯМ (splitParagraph),
+     поэтому первый блок разворота — это всегда целое предложение. */
+
+  const bookEl = document.getElementById('book');
+  const single = bookEl?.classList.contains('single-page') === true;
+
+  const all = Array.from(root.querySelectorAll('[data-block-id]'))
     // Во время анимации перелистывания в #flipLayer лежат КОПИИ страниц
     // с теми же data-block-id — их нужно исключить, иначе якорь может
     // «зацепиться» за лист, а не за статичную страницу.
@@ -48,9 +32,30 @@ export function buildPositionAnchor(root, viewport) {
       rect: node.getBoundingClientRect(),
       text: node.textContent,
       previewText: normalizePreview(node.textContent),
+      // Какой странице принадлежит блок (подложки левой/правой страницы)
+      side: node.closest('#contentUnderLeft') ? 'left' : 'right',
     }));
 
-  return computeAnchorFromVisibleBlocks(blocks, viewport);
+  if (all.length === 0) return null;
+
+  // Сторона, с которой начинается разворот в текущем режиме
+  const preferredSide = single ? 'right' : 'left';
+  let candidates = all.filter((b) => b.side === preferredSide);
+  // Левая страница пуста (конец книги / начало в single) — берём правую
+  if (candidates.length === 0) candidates = all.filter((b) => b.side === 'right');
+  if (candidates.length === 0) return null;
+
+  // Первый блок стороны = первое предложение на развороте. Фильтр по
+  // viewport не нужен: страница разворота принадлежит текущему
+  // положению книги целиком, а не видимой части окна.
+  candidates.sort((a, b) => a.rect.top - b.rect.top);
+  const target = candidates[0];
+
+  return {
+    blockId: target.blockId,
+    offsetRatio: 0,
+    previewText: target.previewText,
+  };
 }
 
 /* ---------- Поиск страницы по якорю ---------- */

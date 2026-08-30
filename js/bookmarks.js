@@ -1,6 +1,6 @@
 /* ===== BookHaven 3D — закладки и заметки ===== */
 
-import { buildPositionAnchor } from './position.js?v=20260809c';
+import { buildPositionAnchor } from './position.js?v=20260830a';
 
 export class Bookmarks {
   constructor(reader, onChange = null) {

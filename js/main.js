@@ -6,7 +6,7 @@ import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
 import { Notes } from './notes.js?v=20260827b';
 import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, loadBookMeta, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260830b';
-import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
+import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260830a';
 
 // API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
 const API_PORT = 8001;

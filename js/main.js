@@ -5,7 +5,7 @@ import { Library } from './library.js?v=20260822a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
 import { Notes } from './notes.js?v=20260827b';
-import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260822a';
+import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, loadBookMeta, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260830b';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260809c';
 
 // API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
@@ -527,6 +527,22 @@ function applyVisualSettings() {
     d.classList.toggle('active', d.dataset.themeName === s.theme));
 }
 
+/** Синхронизирует контролы панели настроек с State.settings
+    (после подтягивания состояния с сервера). */
+function syncSettingsUI() {
+  const s = State.settings;
+  const font = document.getElementById('setFontSize');
+  const line = document.getElementById('setLineHeight');
+  const margins = document.getElementById('setMargins');
+  const flip = document.getElementById('setPageFlipAnimation');
+  const hyph = document.getElementById('setHyphenation');
+  if (font) font.value = s.fontSize;
+  if (line) line.value = s.lineHeight;
+  if (margins) margins.value = s.margins;
+  if (flip) flip.checked = s.pageFlipAnimation !== false;
+  if (hyph) hyph.checked = s.hyphenation !== false;
+}
+
 function getPageCacheKey(book, settings) {
   const bookId = book?.id ?? 'demo';
   const bookEl = document.getElementById('book');
@@ -581,9 +597,29 @@ function schedulePersist(library) {
 
 /* ---------- Автосохранение ---------- */
 
+// Штамп состояния, которое клиент уже видел (updatedAt из state.json).
+// Сервер по нему отвергает запись устаревших копий.
+let knownUpdatedAt = 0;
+
 function persist(library) {
   // Настройки и последняя открытая книга — в state.json (глобально)
-  saveState(persistSnapshot(State.settings, library.books, State.lastOpenedBookId));
+  const snapshot = persistSnapshot(State.settings, library.books, State.lastOpenedBookId, knownUpdatedAt);
+  saveState(snapshot).then((result) => {
+    if (result?.stale && result.state) {
+      // Наша копия устарела (другой браузер записал новее) — принимаем
+      // актуальное состояние с сервера и применяем его настройки.
+      knownUpdatedAt = result.state.updatedAt ?? knownUpdatedAt;
+      if (result.state.settings) {
+        Object.assign(State.settings, result.state.settings);
+        applyVisualSettings();
+        syncSettingsUI();
+      }
+    } else if (result?.ok) {
+      // Запись прошла — запоминаем новый штамп из локальной копии
+      const saved = loadState();
+      knownUpdatedAt = saved?.updatedAt ?? knownUpdatedAt;
+    }
+  });
 }
 
 function captureCurrentAnchor() {
@@ -593,13 +629,39 @@ function captureCurrentAnchor() {
   });
 }
 
-/** Точечное сохранение прогресса/закладок текущей книги в её meta.json. */
+/** Точечное сохранение прогресса/закладок текущей книги в её meta.json.
+    positionUpdatedAt — штамп позиции: сервер принимает позицию только
+    от того клиента, который видел самую свежую (последний листал — тот и прав).
+    После сохранения принимаем merge-результат сервера (другой браузер мог
+    параллельно добавить свою закладку — она не должна потеряться). */
 function persistCurrentBookMeta() {
   if (!State.currentBook?.id) return;
-  saveBookMeta(State.currentBook.id, {
-    progress: State.currentBook.progress ?? 0,
-    bookmarks: State.currentBook.bookmarks ?? [],
-    anchor: State.currentBook.anchor ?? null,
+  const book = State.currentBook;
+  saveBookMeta(book.id, {
+    progress: book.progress ?? 0,
+    bookmarks: book.bookmarks ?? [],
+    anchor: book.anchor ?? null,
+    positionUpdatedAt: book.positionUpdatedAt ?? 0,
+    deletedBookmarksIds: book.deletedBookmarksIds ?? [],
+  }).then((result) => {
+    if (result?.ok && result.meta && book === State.currentBook) {
+      // Сервер вернул merge-итог: обновляем штампы и список закладок,
+      // если он изменился (чужая закладка добавилась / наша удалена)
+      book.positionUpdatedAt = result.meta.positionUpdatedAt ?? book.positionUpdatedAt;
+      if (Array.isArray(result.meta.bookmarks)) {
+        const changed = JSON.stringify(result.meta.bookmarks) !== JSON.stringify(book.bookmarks);
+        if (changed) {
+          book.bookmarks = result.meta.bookmarks;
+          book.deletedBookmarksIds = result.meta.deletedBookmarksIds ?? [];
+          // Обновляем панель закладок, если она открыта
+          const panel = document.getElementById('bookmarksPanel');
+          if (panel?.classList.contains('open')) {
+            const evt = new CustomEvent('bookmarks-updated');
+            window.dispatchEvent(evt);
+          }
+        }
+      }
+    }
   });
 }
 
@@ -658,6 +720,12 @@ async function init() {
   const serverState = await loadStateFromServer();
   const initialState = serverState ?? saved;
   if (initialState?.settings) Object.assign(State.settings, initialState.settings);
+  knownUpdatedAt = initialState?.updatedAt ?? 0;
+
+  // Синхронизируем ВСЕ контролы настроек с восстановленными значениями
+  // (в HTML у слайдеров жёсткие value по умолчанию — без этого панель
+  // показывала бы 18/1.6/60 при фактических 28/2.5/…)
+  syncSettingsUI();
 
   // Синхронизируем переключатель анимации с восстановленными настройками
   const flipToggle = document.getElementById('setPageFlipAnimation');
@@ -827,6 +895,9 @@ async function init() {
     if (State.currentBook && reader.pages.length > 0 && !State.restoringPosition && !viewingNote) {
       State.currentBook.progress = reader.progress.ratio;
       State.currentBook.anchor = captureCurrentAnchor();
+      // Штамп позиции: «я видел позицию сейчас» — сервер примет её,
+      // даже если другой браузер параллельно сохранил свою (более старую)
+      State.currentBook.positionUpdatedAt = Date.now();
       debouncedSave(() => persistCurrentBookMeta());
     }
   };
@@ -924,6 +995,58 @@ async function init() {
 
   // Сохранение при закрытии вкладки
   window.addEventListener('beforeunload', () => persist(library));
+
+  // Синхронизация при возврате в окно: другой браузер мог изменить настройки,
+  // пока эта вкладка была в фоне. Подтягиваем свежее состояние с сервера.
+  let syncing = false;
+  const syncFromServer = async () => {
+    if (syncing || document.hidden) return;
+    syncing = true;
+    try {
+      const fresh = await loadStateFromServer();
+      if (fresh?.settings && (fresh.updatedAt ?? 0) > knownUpdatedAt) {
+        knownUpdatedAt = fresh.updatedAt;
+        Object.assign(State.settings, fresh.settings);
+        applyVisualSettings();
+        syncSettingsUI();
+        // Пересчитать страницы с сохранением позиции
+        applySettings(reader);
+        restoreBookPosition(reader, State.currentBook);
+      }
+      // Meta текущей книги: другой браузер мог добавить/удалить закладку
+      // или уйти дальше по тексту — подтягиваем и обновляем панель.
+      if (State.currentBook?.id) {
+        const meta = await loadBookMeta(State.currentBook.id);
+        if (meta && !State.restoringPosition) {
+          const serverPos = meta.positionUpdatedAt ?? 0;
+          const localPos = State.currentBook.positionUpdatedAt ?? 0;
+          // Позиция: серверная свежее — принимаем её (без пересохранения)
+          if (serverPos > localPos && typeof meta.progress === 'number') {
+            State.currentBook.progress = meta.progress;
+            State.currentBook.anchor = meta.anchor ?? null;
+            State.currentBook.positionUpdatedAt = serverPos;
+            restoreBookPosition(reader, State.currentBook);
+          }
+          // Закладки: merge уже сделан на сервере — берём итоговый список
+          if (Array.isArray(meta.bookmarks)) {
+            const hadCount = (State.currentBook.bookmarks ?? []).length;
+            State.currentBook.bookmarks = meta.bookmarks;
+            State.currentBook.deletedBookmarksIds = meta.deletedBookmarksIds ?? [];
+            if (meta.bookmarks.length !== hadCount) {
+              bookmarks._render();
+              bookmarks._updateMarker();
+            }
+          }
+        }
+      }
+    } finally {
+      syncing = false;
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) syncFromServer();
+  });
+  window.addEventListener('focus', syncFromServer);
 }
 
 init();

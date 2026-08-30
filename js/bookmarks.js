@@ -31,6 +31,12 @@ export class Bookmarks {
         this.close();
       }
     });
+
+    // Сервер смержил закладки с другим браузером — обновить панель,
+    // если она открыта (событие из persistCurrentBookMeta).
+    window.addEventListener('bookmarks-updated', () => {
+      if (this.isOpen) this._render();
+    });
   }
 
   setBook(book) {
@@ -64,6 +70,10 @@ export class Bookmarks {
 
   remove(id) {
     this.book.bookmarks = this.book.bookmarks.filter((b) => b.id !== id);
+    // Надгробие: id удалённой закладки. Сервер не даст другому браузеру
+    // (с устаревшей копией списка) воскресить её при merge.
+    if (!Array.isArray(this.book.deletedBookmarksIds)) this.book.deletedBookmarksIds = [];
+    this.book.deletedBookmarksIds.push(String(id));
     this._render();
     this._updateMarker();
     this.onChange?.();

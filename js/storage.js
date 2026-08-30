@@ -9,10 +9,13 @@ const LS_KEY = 'bookhaven3d';
 const API_PORT = 8001;
 const SERVER_URL = `${location.protocol}//${location.hostname}:${API_PORT}`;
 
-function buildStateSnapshot(settings, books, lastOpenedBookId = null) {
+function buildStateSnapshot(settings, books, lastOpenedBookId = null, updatedAt = null) {
   return {
     settings,
     lastOpenedBookId,
+    // Штамп последнего известного клиенту состояния: сервер сравнит его
+    // со своим и отвергнет запись, если на сервере уже новее (другой браузер).
+    updatedAt: updatedAt ?? 0,
     books: books.map((b) => ({
       id: b.id,
       title: b.title,
@@ -21,7 +24,9 @@ function buildStateSnapshot(settings, books, lastOpenedBookId = null) {
       progress: b.progress,
       palette: b.palette,
       bookmarks: b.bookmarks ?? [],
-      anchor: b.anchor ?? null,      hasCover: b.hasCover === true,    })),
+      anchor: b.anchor ?? null,
+      hasCover: b.hasCover === true,
+    })),
   };
 }
 
@@ -44,13 +49,25 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 500) {
 export async function saveState(state) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
-    await fetchWithTimeout(SERVER_URL, {
+    const res = await fetchWithTimeout(SERVER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(state),
     }, 700);
+    // Сервер отверг запись как устаревшую (на сервере уже новее — его
+    // записал другой браузер). Подтягиваем актуальное состояние и
+    // обновляем локальный штамп, чтобы наши следующие сохранения прошли.
+    if (res?.ok) {
+      const data = await res.json().catch(() => null);
+      if (data?.stale && data.state) {
+        localStorage.setItem(LS_KEY, JSON.stringify(data.state));
+        return { stale: true, state: data.state };
+      }
+    }
+    return { ok: true };
   } catch {
     // молча игнорируем ошибки сети
+    return { ok: false };
   }
 }
 
@@ -133,7 +150,8 @@ export async function deleteBookFromServer(bookId) {
   }
 }
 
-/** Сохраняет прогресс/закладки книги в её meta.json на сервере. */
+/** Сохраняет прогресс/закладки книги в её meta.json на сервере.
+    Возвращает { ok, meta } — meta с сервера (после merge закладок). */
 export async function saveBookMeta(bookId, meta) {
   try {
     const res = await fetchWithTimeout(
@@ -143,11 +161,28 @@ export async function saveBookMeta(bookId, meta) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(meta),
       },
-      700
+      5000
     );
-    return res.ok;
+    if (!res.ok) return { ok: false };
+    const data = await res.json().catch(() => null);
+    return { ok: !!data?.ok, meta: data?.meta ?? null };
   } catch {
-    return false;
+    return { ok: false };
+  }
+}
+
+/** Загружает meta книги (закладки/позиция) с сервера. */
+export async function loadBookMeta(bookId) {
+  try {
+    const res = await fetchWithTimeout(
+      `${SERVER_URL}/books/${encodeURIComponent(bookId)}/meta`,
+      {},
+      5000
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 
@@ -162,6 +197,6 @@ export function debouncedSave(payload, ms = 350) {
   }, ms);
 }
 
-export function persistSnapshot(settings, books, lastOpenedBookId = null) {
-  return buildStateSnapshot(settings, books, lastOpenedBookId);
+export function persistSnapshot(settings, books, lastOpenedBookId = null, updatedAt = null) {
+  return buildStateSnapshot(settings, books, lastOpenedBookId, updatedAt);
 }

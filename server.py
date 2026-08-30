@@ -17,6 +17,7 @@ import json
 import os
 import re
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -102,12 +103,28 @@ def ensure_books_dir():
 
 def load_state():
     ensure_store()
-    return json.loads(DATA_FILE.read_text(encoding='utf-8'))
+    state = json.loads(DATA_FILE.read_text(encoding='utf-8'))
+    # Штамп обновления (мс, как Date.now() в браузере): по нему клиенты
+    # понимают, чьё состояние свежее. Старым state.json без штампа — 0.
+    if not isinstance(state.get('updatedAt'), (int, float)):
+        state['updatedAt'] = 0
+    return state
 
 
 def save_state(state):
     ensure_store()
+    # Штамп ставит СЕРВЕР, а не клиент: клиентские часы могут врать.
+    # Если во входящем состоянии штамп есть и он старше текущего в файле —
+    # это запись устаревшей копии (вкладка открыта давно и не видела чужих
+    # изменений) — отвергаем, чтобы не затирать чужие настройки.
+    incoming = state.get('updatedAt')
+    if isinstance(incoming, (int, float)):
+        current = load_state().get('updatedAt', 0)
+        if incoming < current:
+            return False   # устаревшее состояние — не сохраняем
+    state['updatedAt'] = int(time.time() * 1000)
     DATA_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    return True
 
 
 # ---------- Утилиты для FB2 ----------
@@ -503,9 +520,14 @@ class APIHandler(BaseHTTPRequestHandler):
                 self._send_json(err, status=400)
                 return
             try:
-                save_state(payload)
+                saved = save_state(payload)
             except OSError as e:
                 self._send_json({'error': 'Не удалось сохранить состояние', 'detail': str(e)}, status=500)
+                return
+            if not saved:
+                # Устаревший штамп: на сервере уже новее состояние (его записал
+                # другой браузер). Отдаём актуальное — клиент подтянется.
+                self._send_json({'ok': False, 'stale': True, 'state': load_state()})
                 return
             self._send_json({'ok': True})
 
@@ -761,7 +783,16 @@ class APIHandler(BaseHTTPRequestHandler):
         return candidate, candidate.stem
 
     def _update_book_meta(self, book_id):
-        """Обновляет прогресс/закладки книги в её meta.json."""
+        """Обновляет прогресс/закладки книги в её meta.json.
+
+        Синхронизация между браузерами:
+        - позиция (progress/anchor) принимается только если incoming-штамп
+          positionUpdatedAt не старше сохранённого (последний двигал страницу —
+          тот и прав);
+        - закладки ОБЪЕДИНЯЮТСЯ по id: новые добавляются, изменённые обновляются,
+          а удалённые не resurrect'ятся благодаря списку-надгробиям
+          deletedBookmarksIds (id закладок, которые клиент когда-то удалил).
+        """
         from urllib.parse import unquote
         book_id = safe_book_id(unquote(book_id))
         if book_id is None:
@@ -780,13 +811,56 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_json({'error': 'Book not found'}, status=404)
             return
 
-        # Читаем текущие метаданные и обновляем только переданные поля
+        # Читаем текущие метаданные
         try:
             meta = json.loads(meta_file.read_text(encoding='utf-8'))
         except Exception:
             meta = {}
 
-        for key in ('progress', 'bookmarks', 'anchor', 'title', 'author'):
+        # ---- Позиция чтения: только свежее затирает свежее ----
+        incoming_pos = payload.get('positionUpdatedAt')
+        if isinstance(incoming_pos, (int, float)):
+            current_pos = meta.get('positionUpdatedAt', 0) or 0
+            if incoming_pos >= current_pos:
+                for key in ('progress', 'anchor'):
+                    if key in payload:
+                        meta[key] = payload[key]
+                meta['positionUpdatedAt'] = int(time.time() * 1000)
+            # иначе: входящая позиция устарела — не трогаем progress/anchor
+        else:
+            # Штампа нет (старый клиент) — пишем как раньше
+            for key in ('progress', 'anchor'):
+                if key in payload:
+                    meta[key] = payload[key]
+
+        # ---- Закладки: merge по id + надгробия удалённых ----
+        if 'bookmarks' in payload:
+            incoming_bms = payload.get('bookmarks')
+            if isinstance(incoming_bms, list):
+                # Надгробия: id удалённых закладок (накапливаются, чтобы
+                # другой браузер с устаревшей копией не воскресил закладку)
+                tombstones = set(meta.get('deletedBookmarksIds', []) or [])
+                if isinstance(payload.get('deletedBookmarksIds'), list):
+                    tombstones.update(str(i) for i in payload['deletedBookmarksIds'] if i)
+
+                merged = {}
+                for b in meta.get('bookmarks', []) or []:
+                    if isinstance(b, dict) and b.get('id'):
+                        merged[str(b['id'])] = b
+                for b in incoming_bms:
+                    if isinstance(b, dict) and b.get('id'):
+                        bid = str(b['id'])
+                        if bid in tombstones:
+                            continue   # удалена в другом браузере — не воскресаем
+                        merged[bid] = b
+                # Убираем из результата те, что в надгробиях
+                bookmarks = [b for bid, b in merged.items() if bid not in tombstones]
+                # Сортировка по blockId (как на клиенте) для стабильности
+                bookmarks.sort(key=lambda b: (b.get('anchor', {}) or {}).get('blockId') or '')
+                meta['bookmarks'] = bookmarks
+                meta['deletedBookmarksIds'] = sorted(tombstones)
+
+        for key in ('title', 'author'):
             if key in payload:
                 meta[key] = payload[key]
 

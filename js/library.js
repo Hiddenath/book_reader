@@ -3,7 +3,7 @@
    Метаданные (название, автор, прогресс, закладки) — в meta.json книги. */
 
 import { parseBook } from './parsers.js?v=20260806d';
-import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260822a';
+import { saveBookToServer, deleteBookFromServer } from './storage.js?v=20260830b';
 
 // API-сервер (для загрузки обложек из FB2)
 const API_PORT = 8001;

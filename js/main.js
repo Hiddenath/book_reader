@@ -1185,23 +1185,44 @@ async function init() {
         Object.assign(State.settings, fresh.settings);
         applyVisualSettings();
         syncSettingsUI();
-        // Пересчитать страницы с сохранением позиции
-        applySettings(reader);
-        restoreBookPosition(reader, State.currentBook);
+        // Восстановление по якорю-булавке. restoringPosition блокирует
+        // persist ПРОМЕЖУТОЧНЫХ позиций (пересъём якоря во время
+        // восстановления «уводил» букву — якоря скакали между
+        // вкладками/браузерами). Снимаем по таймеру: tryRestore растянут
+        // на ~220мс, 500мс — с запасом.
+        State.restoringPosition = true;
+        try {
+          applySettings(reader);
+          restoreBookPosition(reader, State.currentBook);
+        } finally {
+          window.setTimeout(() => { State.restoringPosition = false; }, 500);
+        }
       }
       // Meta текущей книги: другой браузер мог добавить/удалить закладку
       // или уйти дальше по тексту — подтягиваем и обновляем панель.
+      // syncing=true: мы в цикле синхронизации (restoringPosition поднят
+      // нами для блокировки persist) — meta обработать НАДО, это не открытие
+      // книги. Позиция ниже применяется только если серверная свежее.
       if (State.currentBook?.id) {
         const meta = await loadBookMeta(State.currentBook.id);
-        if (meta && !State.restoringPosition) {
+        if (meta && (!State.restoringPosition || syncing)) {
           const serverPos = meta.positionUpdatedAt ?? 0;
           const localPos = State.currentBook.positionUpdatedAt ?? 0;
-          // Позиция: серверная свежее — принимаем её (без пересохранения)
+          // Позиция: серверная свежее — принимаем её (без пересохранения).
+          // restoringPosition поднят на время restore: onPageChange во время
+          // восстановления не должен переснимать якорь с промежуточной
+          // позиции (иначе буква «уезжала» и якоря скакали между
+          // вкладками/браузерами).
           if (serverPos > localPos && typeof meta.progress === 'number') {
             State.currentBook.progress = meta.progress;
             State.currentBook.anchor = meta.anchor ?? null;
             State.currentBook.positionUpdatedAt = serverPos;
-            restoreBookPosition(reader, State.currentBook);
+            State.restoringPosition = true;
+            try {
+              restoreBookPosition(reader, State.currentBook);
+            } finally {
+              window.setTimeout(() => { State.restoringPosition = false; }, 500);
+            }
           }
           // Закладки: merge уже сделан на сервере — берём итоговый список
           if (Array.isArray(meta.bookmarks)) {

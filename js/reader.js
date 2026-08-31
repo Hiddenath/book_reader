@@ -372,14 +372,12 @@ export class Reader {
 
     const onMove = (ev) => {
       const x = ev.clientX - rect.left;
-      let deg;
-      if (forward) {
-        // Тянем справа налево: 0° у правого края, 180° у левого
-        deg = Math.max(0, Math.min(180, ((rect.width - x) / rect.width) * 180));
-      } else {
-        // Тянем слева направо: 180° у левого края, 0° у правого
-        deg = Math.max(0, Math.min(180, (x / rect.width) * 180));
-      }
+      // Свободный край листа следует за указателем — формула ОДНА для обеих
+      // сторон: у правого края лист лежит на правой странице (0°), у левого —
+      // на левой (180°). Раньше «назад» была инвертирована (x/width вместо
+      // (width−x)/width): лист двигался ПРОТИВ пальца — drag назад
+      // выглядел сломанным.
+      const deg = Math.max(0, Math.min(180, ((rect.width - x) / rect.width) * 180));
       applyAngle(deg);
       this._dragDeg = deg;
     };
@@ -387,26 +385,95 @@ export class Reader {
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       this.isDragging = false;
 
       const deg = this._dragDeg ?? (forward ? 0 : 180);
       const complete = forward ? deg > 90 : deg < 90;
+      const target = forward ? 180 : 0;
+      const step = this.singlePage ? 1 : 2;
 
-      // Доводка: анимация от текущего угла до конца/начала
+      if (complete) {
+        // Листок доведён до конца — завершаем НА МЕСТЕ, без анимации.
+        // (Старый баг: полный переворот при отпускании запускал всё
+        // перелистывание заново — лист «прыгал» в начало и анимировался
+        // повторно. Теперь листок остаётся лежать, где его оставили.)
+        if (Math.abs(target - deg) < 1) {
+          sheet.remove();
+          this.castLeft.style.opacity = 0;
+          this.castRight.style.opacity = 0;
+          this.currentSpread += forward ? step : -step;
+          this._renderSpread();
+          return;
+        }
+        // Доводка: листок продолжает движение от ТЕКУЩЕГО угла до конца —
+        // плавное завершение в обе стороны (вперёд и назад).
+        this._finishFlip(sheet, direction, deg);
+        return;
+      }
+
+      // Откат: листок возвращается в исходное положение без смены разворота
       sheet.remove();
       this.castLeft.style.opacity = 0;
       this.castRight.style.opacity = 0;
-
-      if (complete) {
-        this._flip(direction);
-      } else {
-        // Откат: флип в обратную сторону без смены разворота
-        this._rollback(direction, deg);
-      }
+      this._rollback(direction, deg);
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    // Жест перехватила ОС/браузер (скролл) — считаем отпусканием,
+    // иначе лист «застывал» в воздухе (важно для тач-экранов)
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  /* Доводка перелистывания после drag: анимирует СУЩЕСТВУЮЩИЙ лист
+     (созданный при старте drag) от текущего угла до конечного положения
+     и завершает переворот. Единый механизм для обеих сторон (вперёд/назад)
+     и обоих режимов (double/single): содержимое листа и подложки уже
+     подготовлены в _flip/_flipSingle на старте перетаскивания. */
+  _finishFlip(sheet, direction, fromDeg) {
+    const forward = direction === 'forward';
+    const step = this.singlePage ? 1 : 2;
+    const to = forward ? 180 : 0;
+    const shadeFront = sheet.querySelector('.flip-shade-front');
+    const shadeBack = sheet.querySelector('.flip-shade-back');
+
+    this.isAnimating = true;
+    const start = performance.now();
+    // Длительность пропорциональна остатку пути; минимум — короткий «доход»
+    const dur = Math.max(80, (FLIP_DURATION * Math.abs(to - fromDeg)) / 180);
+
+    const tick = (now) => {
+      const t = Math.min((now - start) / dur, 1);
+      const deg = fromDeg + (to - fromDeg) * easeInOutCubic(t);
+      sheet.style.transform = `rotateY(${-deg}deg)`;
+      const rad = (deg * Math.PI) / 180;
+      // Тень на самом листе: максимум в середине поворота
+      const selfShade = Math.sin(rad) * 0.55;
+      shadeFront.style.opacity = deg < 90 ? selfShade : 0;
+      shadeBack.style.opacity = deg >= 90 ? selfShade : 0;
+      // Тень на лежащей странице
+      const cast = Math.sin(rad) * 0.5;
+      if (this.singlePage) {
+        this.castRight.style.opacity = forward ? cast : 0;
+        this.castLeft.style.opacity = 0;
+      } else {
+        this.castLeft.style.opacity = forward ? cast : 0;
+        this.castRight.style.opacity = forward ? 0 : cast;
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        sheet.remove();
+        this.castLeft.style.opacity = 0;
+        this.castRight.style.opacity = 0;
+        this.currentSpread += forward ? step : -step;
+        this._renderSpread();
+        this.isAnimating = false;
+      }
+    };
+    requestAnimationFrame(tick);
   }
 
   _rollback(direction, fromDeg) {

@@ -1,6 +1,6 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
-import { Reader } from './reader.js?v=20260810d';
+import { Reader } from './reader.js?v=20260831a';
 import { Library } from './library.js?v=20260822a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
@@ -53,7 +53,7 @@ const State = {
     fontSize: 18,
     lineHeight: 1.6,
     margins: 60,
-    vmargins: 48,
+    vmargins: 50,
     theme: 'paper',
     pageFlipAnimation: true,
     hyphenation: true,
@@ -172,7 +172,100 @@ function renderBlocks(blocks, bookId = 'demo') {
   }).join('');
 }
 
-function paginate(content, settings, bookId = 'book') {
+/* ---------- Якорь-булавка: жёсткая фиксация первой буквы ---------- */
+
+/* Нормализация как в position.js (previewText якоря уже нормализован). */
+const pinNorm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+
+/* Делит текст на предложения — тот же алгоритм, что в splitParagraph. */
+function splitSentences(text) {
+  return String(text ?? '')
+    .split(/(?<=[.!?…])(\s+)/)
+    .reduce((acc, part, i) => {
+      if (i % 2 === 0) acc.push(part);
+      else acc[acc.length - 1] += part;   // пробел — к предыдущему предложению
+      return acc;
+    }, [])
+    .filter((s) => s.trim());
+}
+
+/* Делит блок по якорю: { before, after } — текст до якорной буквы и от неё
+   до конца блока. null — якорь неприменим (не текст / текст не совпал). */
+function splitPinnedBlock(block, pin) {
+  const text = String(block.text ?? '');
+  const needle = pinNorm(pin.previewText);
+
+  // Неразрезаемые блоки (картинка/глава/подзаголовок): якорь — начало блока
+  if (block.type === 'image' || block.type === 'chapter' || block.type === 'subtitle') {
+    if (needle && !pinNorm(text).startsWith(needle.slice(0, 16))) return null;
+    return { before: '', after: text };
+  }
+  if (!text.trim() || !needle) return null;
+
+  // Ищем предложение, с которого начинается якорный фрагмент: хвост блока
+  // от этого предложения должен начинаться текстом якоря (previewText).
+  // Идём с конца: при повторах одинаковых предложений берём самое позднее
+  // совпадение (границы в повторяющемся тексте и так неразличимы).
+  const sentences = splitSentences(text);
+  for (let j = sentences.length - 1; j >= 0; j--) {
+    const tail = pinNorm(sentences.slice(j).join(''));
+    if (tail.startsWith(needle)) {
+      return {
+        before: sentences.slice(0, j).join(''),
+        after: sentences.slice(j).join(''),
+      };
+    }
+  }
+
+  // Запасной путь: якорный чанк был разрезан по СЛОВАМ (предложение
+  // длиннее целой страницы — splitParagraph режет по словам). Ищем границу
+  // по словам: остаток от неё должен начинаться текстом якоря.
+  // ВАЖНО: идём по ВСЕМ индексам с пропускам разделителей — шаг строго -2
+  // от чётной/нечётной позиции попадает только на разделители при
+  // чётной длине массива (слова в split(/(\s+)/) лежат на чётных индексах,
+  // но последний элемент может быть как словом, так и разделителем).
+  const parts = text.split(/(\s+)/);   // слова и разделители — по очереди
+  for (let w = parts.length - 1; w >= 0; w--) {
+    if (!parts[w] || !parts[w].trim()) continue;   // разделитель — мимо
+    const tail = pinNorm(parts.slice(w).join(''));
+    if (tail.startsWith(needle)) {
+      return {
+        before: parts.slice(0, w).join(''),
+        after: parts.slice(w).join(''),
+      };
+    }
+  }
+  return null; // совпадения нет (книга изменилась?) — якорь не применяем
+}
+
+/* Вставляет в поток блоков принудительный разрыв страницы по якорю:
+   часть блока ДО якорной буквы остаётся в прежнем потоке, а от якорной
+   буквы и далее — открывает новую страницу (в double-режиме — ЛЕВУЮ,
+   чтобы буква возглавляла разворот). Всем блокам заранее назначаются
+   стабильные id — части разделённого блока делят один id исходного. */
+function applyPinToBlocks(blocks, bookId, pin, single) {
+  const out = [];
+  let idx = 0;               // счётчик текстовых блоков (бывший sourceIndex)
+  let pinned = false;
+  for (const b of blocks) {
+    if (b.type === 'pagebreak') { out.push(b); continue; }
+    const bid = makeStableBlockId(bookId, idx++);
+    if (!pinned && pin?.blockId && bid === pin.blockId) {
+      const split = splitPinnedBlock(b, pin);
+      if (split) {
+        pinned = true;
+        if (split.before.trim()) out.push({ ...b, text: split.before, blockId: bid });
+        out.push({ type: 'pagebreak', pinAlign: !single });
+        out.push({ ...b, text: split.after, blockId: bid });
+        continue;
+      }
+    }
+    out.push({ ...b, blockId: bid });
+  }
+  return out;
+}
+
+function paginate(content, settings, bookId = 'book', pin = null) {
   const bookEl = document.getElementById('book');
   const measurer = document.createElement('div');
   measurer.className = 'page-content';
@@ -204,7 +297,7 @@ function paginate(content, settings, bookId = 'book') {
   // rotateX — нижний край страницы ближе к зрителю). Значения должны
   // совпадать с CSS padding .page-content (см. --vmargins в reader.css).
   const single = book.classList.contains('single-page');
-  const vm = settings.vmargins ?? 48;
+  const vm = settings.vmargins ?? 50;
   const padTop = single ? vm - 8 : vm;
   const padBottom = single ? vm + 42 : vm;
 
@@ -222,16 +315,22 @@ function paginate(content, settings, bookId = 'book') {
     ? content
     : (content || '').trim().split(/\n\s*\n/).map(p => ({ type: 'paragraph', text: p.trim() })).filter(b => b.text);
 
+  // Якорь-булавка: принудительный разрыв страницы ровно на первой букве
+  // якоря — при ЛЮБОЙ вёрстке (шрифт/отступы/режим) эта буква открывает
+  // страницу разворота. Всем блокам заранее назначаются стабильные id.
+  const work = applyPinToBlocks(blocks, bookId, pin, single);
+
   const pages = [];
   const pageBlocks = [];   // метаданные блоков: pageBlocks[i] = [{ blockId, text }]
   const toc = [];           // оглавление: [{ title, page }]
+  let pinPage = -1;         // индекс страницы, которую открывает якорная буква
   let currentPage = [];
   let currentBlocks = [];
   let currentH = 0;
   let sourceIndex = 0;      // стабильный номер ИСХОДНОГО блока (не чанка!)
   let lastWasHeader = false; // предыдущий блок был заголовком (глава/подзаголовок)
 
-  for (const block of blocks) {
+  for (const block of work) {
     // Разрыв страницы: принудительно завершаем текущую страницу
     if (block.type === 'pagebreak') {
       if (currentPage.length > 0) {
@@ -240,6 +339,15 @@ function paginate(content, settings, bookId = 'book') {
         currentPage = [];
         currentBlocks = [];
         currentH = 0;
+      }
+      // Разрыв по якорю-булавке: в двухстраничном режиме якорная буква
+      // должна возглавить ЛЕВУЮ страницу разворота (чётный индекс).
+      if (block.pinAlign) {
+        if (pages.length % 2 !== 0) {
+          pages.push('');
+          pageBlocks.push([]);
+        }
+        pinPage = pages.length; // следующая открываемая страница — якорная
       }
       lastWasHeader = false;
       continue;
@@ -299,7 +407,9 @@ function paginate(content, settings, bookId = 'book') {
     // ВАЖНО: один стабильный id на ИСХОДНЫЙ блок текста.
     // Длинный абзац, разрезанный на несколько страниц, сохраняет ОДИН id,
     // чтобы закладки не «съезжали» при смене размера шрифта/окна.
-    const blockId = makeStableBlockId(bookId, sourceIndex++);
+    // id назначен заранее (applyPinToBlocks): части блока, разделённого
+    // якорем (до/после буквы), делят ОДИН id исходного блока.
+    const blockId = block.blockId || makeStableBlockId(bookId, sourceIndex++);
 
     // Блок не помещается в остаток страницы:
     // - если блок ЦЕЛИКОМ помещается на пустой странице — переносим целиком
@@ -399,7 +509,7 @@ function paginate(content, settings, bookId = 'book') {
     }
   }
 
-  return { pages, toc, pageBlocks, notePages };
+  return { pages, toc, pageBlocks, notePages, pinPage };
 }
 
 // Высота последнего измеренного чанка (заполняется в splitParagraph)
@@ -425,16 +535,8 @@ function splitParagraph(measurer, para, contentH, lineH, type = 'paragraph', fir
     return measurer.getBoundingClientRect().height <= limit;
   };
 
-  // Деление на предложения: знак конца (. ! ? …) + пробел.
-  // Не делим внутри "..." (они уже покрыты) и после однобуквенных инициалов.
-  const sentences = text
-    .split(/(?<=[.!?…])(\s+)/)
-    .reduce((acc, part, i, arr) => {
-      if (i % 2 === 0) acc.push(part);
-      else acc[acc.length - 1] += part;   // пробел — к предыдущему предложению
-      return acc;
-    }, [])
-    .filter((s) => s.trim());
+  // Деление на предложения: тот же алгоритм, что и в делении по якорю
+  const sentences = splitSentences(text);
 
   if (sentences.length === 0) {
     measurerLastH = 0;
@@ -523,7 +625,7 @@ function applyVisualSettings() {
   book.style.setProperty('--font-size', `${s.fontSize}px`);
   book.style.setProperty('--line-height', s.lineHeight);
   book.style.setProperty('--margins', `${s.margins}px`);
-  book.style.setProperty('--vmargins', `${s.vmargins ?? 48}px`);
+  book.style.setProperty('--vmargins', `${s.vmargins ?? 50}px`);
   document.documentElement.dataset.theme = s.theme;
   // Перенос слов: управляется классом на книге (hyphens: auto/manual в CSS)
   book.classList.toggle('no-hyphens', s.hyphenation === false);
@@ -544,8 +646,16 @@ function syncSettingsUI() {
   const hyph = document.getElementById('setHyphenation');
   if (font) font.value = s.fontSize;
   if (line) line.value = s.lineHeight;
-  if (margins) margins.value = s.margins;
-  if (vmargins) vmargins.value = s.vmargins ?? 48;
+  // Отступы: клампим в диапазон слайдеров (10–100) — в старых сохранённых
+  // настройках могли быть значения 0/120 с прежней шкалой
+  if (margins) {
+    s.margins = Math.min(100, Math.max(10, Number(s.margins) || 60));
+    margins.value = s.margins;
+  }
+  if (vmargins) {
+    s.vmargins = Math.min(100, Math.max(10, Number(s.vmargins) || 50));
+    vmargins.value = s.vmargins;
+  }
   if (flip) flip.checked = s.pageFlipAnimation !== false;
   if (hyph) hyph.checked = s.hyphenation !== false;
 }
@@ -557,17 +667,22 @@ function getPageCacheKey(book, settings) {
   // Размер книги в ключе: при изменении ширины окна макет должен перестраиваться,
   // иначе закэшированные страницы (старой ширины) выходят за нижнюю грань.
   const size = bookEl ? `${bookEl.offsetWidth}x${bookEl.offsetHeight}` : '0x0';
-  return `${bookId}|${settings.fontSize}|${settings.lineHeight}|${settings.margins}|${settings.vmargins ?? 48}|${mode}|${size}`;
+  return `${bookId}|${settings.fontSize}|${settings.lineHeight}|${settings.margins}|${settings.vmargins ?? 50}|${mode}|${size}`;
 }
 
-function getPagesForBook(book, settings) {
+function getPagesForBook(book, settings, pin = null) {
   const key = getPageCacheKey(book, settings);
-  if (State.pageCache.has(key)) return State.pageCache.get(key);
+  // Кэш читаем только БЕЗ якоря-булавки: вёрстка с булавкой зависит от
+  // позиции чтения. Результат (с булавкой или без) записывается под тот же
+  // ключ — все последующие обращения (восстановление позиции, сноски)
+  // получают ту же вёрстку, что сейчас на экране.
+  if (!pin && State.pageCache.has(key)) return State.pageCache.get(key);
 
   const content = book?.blocks || book?.text || DEMO_TEXT;
-  const { pages, toc, pageBlocks, notePages } = paginate(content, settings, book?.id ?? 'demo');
-  State.pageCache.set(key, { pages, toc, pageBlocks, notePages });
-  return { pages, toc, pageBlocks, notePages };
+  const result = paginate(content, settings, book?.id ?? 'demo', pin);
+  result.pin = pin;   // якорь, с которым построена вёрстка (для сверки)
+  State.pageCache.set(key, result);
+  return result;
 }
 
 function showLoading(show) {
@@ -575,26 +690,31 @@ function showLoading(show) {
   if (overlay) overlay.classList.toggle('visible', show);
 }
 
-function applySettings(reader) {
+function applySettings(reader, pin) {
   applyVisualSettings();
 
-  // Якорь ДО пересчёта: то же предложение должно остаться вверху страницы
-  // и после новой вёрстки. Без этого позиция сохранялась ПРОПОРЦИЕЙ
-  // (50% старой книги ≠ 50% новой) и текст «уезжал» при движении слайдера.
-  const anchorBefore = State.currentBook && reader.pages.length > 0
-    ? captureCurrentAnchor()
-    : null;
+  // Якорь-булавка: принудительный разрыв ровно на первой букве якоря —
+  // эта буква открывает страницу разворота при любой вёрстке.
+  // По умолчанию — текущая позиция (первая буква левой страницы);
+  // при открытии книги страниц ещё нет — передаётся сохранённый якорь.
+  const anchor = pin !== undefined
+    ? pin
+    : (State.currentBook && reader.pages.length > 0 ? captureCurrentAnchor() : null);
 
   // Пересчёт страниц
-  const { pages, toc, pageBlocks, notePages } = getPagesForBook(State.currentBook, State.settings);
+  const { pages, toc, pageBlocks, notePages, pinPage } =
+    getPagesForBook(State.currentBook, State.settings, anchor);
   const sameBook = reader._bookId === State.currentBook?.id && reader._bookId !== undefined;
   reader._bookId = State.currentBook?.id;
   reader.setPages(pages, sameBook, pageBlocks);
   reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
 
-  // Восстанавливаем позицию по якорю (то же предложение вверху страницы)
-  if (anchorBefore?.blockId) {
-    const page = resolveAnchorPage(anchorBefore, reader.pages, pageBlocks);
+  // Позиция: страница с якорной буквой (pinPage — её индекс); если булавка
+  // не применилась (текст не совпал) — обычный поиск по тексту якоря
+  if (anchor?.blockId) {
+    const page = pinPage >= 0
+      ? pinPage
+      : resolveAnchorPage(anchor, reader.pages, pageBlocks);
     if (page >= 0) reader.goTo(page);
   }
 
@@ -694,16 +814,32 @@ function restoreBookPosition(reader, book) {
     ? book.progress
     : 0;
 
-  // Метаданные блоков текущей пагинации — для поиска по тексту закладки
-  const cached = getPagesForBook(book, State.settings);
-  const pageBlocks = cached?.pageBlocks || null;
+  /* Вёрстка должна быть построена с булавкой СОХРАНЁННОГО якоря — тогда
+     якорная буква возглавляет страницу (pinPage) в любой конфигурации.
+     Если кэш уже построен с этим якорем (например, applySettings только что
+     перестроил с ним) — перестроения не будет, просто переход на pinPage. */
+  const ensurePinnedLayout = () => {
+    const cached = getPagesForBook(book, State.settings); // текущий кэш, без перестроения
+    if (cached?.pin?.blockId === savedAnchor?.blockId &&
+        cached?.pin?.previewText === savedAnchor?.previewText) {
+      return cached;
+    }
+    const fresh = getPagesForBook(book, State.settings, savedAnchor);
+    reader.setPages(fresh.pages, true, fresh.pageBlocks);
+    if (fresh.toc) State.toc?.setItems(fresh.toc);
+    State.notes?.setNotePages(fresh.notePages);
+    return fresh;
+  };
 
   const tryRestore = (attempt) => {
     if (!reader.pages.length) return;
 
     if (savedAnchor?.blockId) {
-      // Точный поиск: по стабильному id, с текстовой проверкой и фолбэком
-      const page = resolveAnchorPage(savedAnchor, reader.pages, pageBlocks);
+      const cached = ensurePinnedLayout();
+      const pageBlocks = cached?.pageBlocks || null;
+      const page = cached?.pinPage >= 0
+        ? cached.pinPage
+        : resolveAnchorPage(savedAnchor, reader.pages, pageBlocks);
       if (page >= 0) {
         reader.goTo(page);
         return;
@@ -728,10 +864,13 @@ async function init() {
   const reader = new Reader();
   let bookmarks = null;
 
-  // Смена режима (одна/две страницы) при изменении размера окна
-  reader.onLayoutChange = () => {
+  // Смена режима (одна/две страницы) при изменении размера окна.
+  // Якорь приходит ДО переключения режима (снятым со старой вёрстки) —
+  // вёрстка перестраивается с булавкой на той же первой букве.
+  reader.onCaptureAnchor = () => (reader.pages.length > 0 ? captureCurrentAnchor() : null);
+  reader.onLayoutChange = (anchorBefore) => {
     if (State.currentBook) {
-      applySettings(reader);
+      applySettings(reader, anchorBefore ?? undefined);
       restoreBookPosition(reader, State.currentBook);
     }
   };
@@ -807,9 +946,13 @@ async function init() {
       if (hadNew) State.pageCache.clear();
      }
     // Даём браузеру отрисовать индикатор, затем строим страницы
+    // Даём браузеру отрисовать индикатор, затем строим страницы.
+    // Передаём сохранённый якорь книги: вёрстка сразу строится с булавкой —
+    // якорная буква возглавит страницу, restoreBookPosition лишь перейдёт
+    // на неё (без повторного перестроения).
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        applySettings(reader);
+        applySettings(reader, book.anchor);
         restoreBookPosition(reader, book);
         showLoading(false);
         window.setTimeout(() => {

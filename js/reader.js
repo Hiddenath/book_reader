@@ -32,8 +32,12 @@ export class Reader {
     this._singleQuery = window.matchMedia('(max-aspect-ratio: 4/5), (max-width: 768px)');
     this._applySingleMode(this._singleQuery.matches);
     this._singleQuery.addEventListener('change', (e) => {
+      // Якорь ДО смены режима: после переключения классы уже переставлены
+      // и старая вёрстка перерисована в новом режиме — первая буква была бы
+      // снята с ДРУГОЙ страницы (в single видна лишь правая старого разворота).
+      const anchor = this.onCaptureAnchor?.() ?? null;
       this._applySingleMode(e.matches);
-      this.onLayoutChange?.();
+      this.onLayoutChange?.(anchor);
     });
   }
 

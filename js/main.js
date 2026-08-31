@@ -342,7 +342,8 @@ function paginate(content, settings, bookId = 'book', pin = null) {
       }
       // Разрыв по якорю-булавке: в двухстраничном режиме якорная буква
       // должна возглавить ЛЕВУЮ страницу разворота (чётный индекс).
-      if (block.pinAlign) {
+      // В single-режиме выравнивание не нужно — пустая страница была бы ВИДНА.
+      if (block.pinAlign && !single) {
         if (pages.length % 2 !== 0) {
           pages.push('');
           pageBlocks.push([]);
@@ -367,7 +368,8 @@ function paginate(content, settings, bookId = 'book', pin = null) {
       }
       // В двухстраничном режиме название главы — на ЛЕВОЙ странице разворота:
       // если текущая позиция нечётная (правая страница), добавляем пустую.
-      if (pages.length % 2 !== 0) {
+      // В single-режиме этого НЕ делаем — пустая страница была бы видна.
+      if (!single && pages.length % 2 !== 0) {
         pages.push('');
         pageBlocks.push([]);
       }
@@ -416,8 +418,10 @@ function paginate(content, settings, bookId = 'book', pin = null) {
     //   (не рвём прозу без необходимости);
     // - если блок длиннее целой страницы — режем по ПРЕДЛОЖЕНИЯМ, заполняя
     //   остаток текущей страницы первым чанком (предложение не разрывается).
+    // ВАЖНО: режем и на ПУСТОЙ странице — иначе блок, открытый якорем-
+    //   булавкой (или просто длинный), переполняет страницу текстом за полями.
     const splittable = block.type !== 'image' && block.type !== 'chapter' && block.type !== 'subtitle';
-    if (splittable && currentH + blockH > contentH && currentPage.length > 0 && blockH > contentH) {
+    if (splittable && currentH + blockH > contentH && blockH > contentH) {
       const avail = contentH - currentH;
       const chunks = splitParagraph(measurer, block.text, contentH, lineH, block.type, avail);
       // Пустой первый чанк = блок целиком переносится на новую страницу
@@ -493,7 +497,9 @@ function paginate(content, settings, bookId = 'book', pin = null) {
 
   measurer.remove();
 
-  if (pages.length % 2 !== 0) {
+  // Хвостовой выравниватель нужен ТОЛЬКО в double-режиме (чётное число
+  // страниц для разворотов). В single пустая последняя страница видна.
+  if (!single && pages.length % 2 !== 0) {
     pages.push('');
     pageBlocks.push([]);
   }

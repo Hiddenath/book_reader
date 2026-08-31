@@ -38,7 +38,9 @@
 }
 
 /* Ночная тема: иконка тёмная (#1b2938) — инвертируем для контраста */
-[data-theme="night"] .library-logo {
+[data-theme="night"] .library-logo,
+[data-theme="ember"] .library-logo,
+[data-theme="amber"] .library-logo {
   filter: invert(0.92);
 }
 

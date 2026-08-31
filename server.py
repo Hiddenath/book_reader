@@ -867,6 +867,21 @@ class APIHandler(BaseHTTPRequestHandler):
             if key in payload:
                 meta[key] = payload[key]
 
+        # Самовосстановление: если title/author потерялись (старый баг
+        # перезаписи meta.json) — извлекаем заново из FB2-файла книги
+        if not meta.get('title') or not meta.get('author'):
+            content = self._find_book_content_file(book_id)
+            if content is not None and content.suffix == '.fb2':
+                try:
+                    fb2_meta = parse_fb2_meta(content.read_text(encoding='utf-8'))
+                    if not meta.get('title'):
+                        meta['title'] = fb2_meta['title']
+                    if not meta.get('author'):
+                        meta['author'] = fb2_meta['author']
+                    log(f'META self-heal «{book_id}»: title/author восстановлены из FB2')
+                except Exception as e:
+                    log(f'WARN self-heal «{book_id}»: {e}')
+
         meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
         self._send_json({'ok': True, 'meta': meta})
 

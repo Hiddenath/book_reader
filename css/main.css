@@ -149,6 +149,37 @@
   --cover-line: rgba(255, 176, 32, 0.45);
 }
 
+/* ===== ОТЛАДКА: границы текстовой области ===== */
+/* Показываются при ?debug=1 или кнопкой. Рамка = РЕАЛЬНЫЕ границы,
+   в которых пагинатор размещает текст (padTop/padBottom/margins из JS).
+   Текст НЕ должен выходить за рамку; пустота ВНУТРИ рамки внизу —
+   недобор плотности (какое-то правило переноса помешало). */
+body.debug-planes .page-content::after {
+  content: '';
+  position: absolute;
+  top: var(--dbg-top, 48px);
+  bottom: var(--dbg-bottom, 48px);
+  left: var(--dbg-left, 60px);
+  right: var(--dbg-right, 60px);
+  border: 1px dashed rgba(255, 0, 100, 0.55);
+  background: rgba(255, 0, 100, 0.04);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Индикатор заполненности: полоска высотой с ИСПОЛЬЗОВАННУЮ часть рамки */
+body.debug-planes .page-content::before {
+  content: '';
+  position: absolute;
+  top: var(--dbg-top, 48px);
+  left: var(--dbg-left, 60px);
+  width: 3px;
+  height: var(--dbg-used, 0px);
+  background: rgba(0, 160, 255, 0.6);
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* ===== База ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 

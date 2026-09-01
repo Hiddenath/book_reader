@@ -188,6 +188,16 @@ Books are stored as **plain files** in `books/` — the original filename is kep
 
 ## 📄 License
 
-The project is built from a custom specification. Third-party libraries: epub.js (BSD-3-Clause), JSZip (MIT/GPLv3).
+**Dual licensing** — see [LICENSE.md](LICENSE.md):
+
+- 🆓 **Personal use — free**: read, install on your devices, modify for
+  yourself, share with others for personal use.
+- 💼 **Commercial use — paid license**: selling, embedding into
+  commercial products/services, monetized hosting, using the code in
+  commercial projects — requires purchasing a license from the author.
+
+Applies to the repository version dated September 1, 2026 and later.
+
+Third-party libraries: epub.js (BSD-3-Clause), JSZip (MIT/GPLv3).
 
 > 📚 **About the books in the screenshots**: the demo uses free preview versions of books from [LitRes](https://www.litres.ru/) (a Russian e-book store) and a public-domain art book. They are shown for demonstration purposes only and are not distributed with the project.

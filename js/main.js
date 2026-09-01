@@ -139,7 +139,7 @@ function escapeAndLink(text) {
 }
 
 function renderBlocks(blocks, bookId = 'demo') {
-  return blocks.map(({ text, blockId, type = 'paragraph', level = 0, src, noteId, cont }, i, arr) => {
+  return blocks.map(({ text, blockId, type = 'paragraph', level = 0, src, noteId, cont, caption, _imgMaxH }, i, arr) => {
     const escaped = escapeHtml(text);
     const contCls = cont ? ' cont' : '';   // продолжение абзаца — красная строка
     // Буквица — только настоящей прозе. Короткий блок (≤ 60 символов —
@@ -177,15 +177,16 @@ function renderBlocks(blocks, bookId = 'demo') {
         return `<p class="note-block" data-block-id="${blockId}" data-note-anchor="${noteId || ''}">${escapeAndLink(text)}</p>`;
       case 'image':
            // Картинка из FB2: src = id <binary>, грузим с сервера.
-        // aspect-ratio из кэша размеров — чтобы пагинатор знал высоту ДО загрузки.
-        // Высота figure задана ЯВНО (включая padding 1.2em сверху и снизу):
-        // иначе измеритель и реальный рендер расходятся на ~2.4em → overflow.
+        // ОБРАТНЫЙ РАСЧЁТ: подпись (если есть) живёт ВНУТРИ figure —
+        // пара неразрывна. Пагинатор передал _imgMaxH — точный лимит
+        // высоты картинки (весь остаток после подписи), рендер
+        // сжимает её так же (max-height inline).
         const imgSrc = `${SERVER_URL}/books/${encodeURIComponent(bookId)}/image/${encodeURIComponent(src || '')}`;
-        // aspect-ratio на img: измеритель знает высоту ДО загрузки,
-        // а max-height (CSS) сжимает слишком высокие картинки.
         const dim = src ? imageSizeCache.get(imgCacheKey(bookId, src)) : null;
         const style = dim && dim.w && dim.h ? `aspect-ratio:${dim.w}/${dim.h};` : '';
-        return `<figure class="book-image" data-block-id="${blockId}"><img src="${imgSrc}" alt="" style="${style}" /></figure>`;
+        const maxH = _imgMaxH ? `max-height:${_imgMaxH}px;` : '';
+        const capHtml = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : '';
+        return `<figure class="book-image" data-block-id="${blockId}"><img src="${imgSrc}" alt="" style="${style}${maxH}" />${capHtml}</figure>`;
       default:
         return `<p data-block-id="${blockId}" class="${cls}">${escapeAndLink(renderText)}</p>`;
     }
@@ -285,6 +286,37 @@ function applyPinToBlocks(blocks, bookId, pin, single) {
   return out;
 }
 
+/* Склеивает подписи с картинками в единые блоки ДО пагинации.
+   Подпись — короткий абзац сразу после <image> (или после другой
+   подписи — «Из его книги…»): «18. Ман Рэй. Мужчина. 1918».
+   Пара физически неразрывна: подпись живёт ВНУТРИ figure (рендерится
+   под картинкой), поэтому не может остаться одна на странице.
+   Текст хранится как caption (отдельное поле), картинка — src. */
+function glueImageCaptions(blocks) {
+  const out = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.type === 'pagebreak') { out.push(b); continue; }
+    if (b.type === 'image') {
+      // Собираем подпись: 1+ коротких абзацев сразу после картинки
+      const captions = [];
+      let j = i + 1;
+      while (j < blocks.length && blocks[j].type === 'paragraph'
+             && String(blocks[j].text || '').trim().length <= 300) {
+        captions.push(String(blocks[j].text).trim());
+        j++;
+      }
+      if (captions.length > 0) {
+        out.push({ ...b, caption: captions.join('\n\n') });
+        i = j - 1;   // пропускаем съеденные подписи
+        continue;
+      }
+    }
+    out.push(b);
+  }
+  return out;
+}
+
 function paginate(content, settings, bookId = 'book', pin = null) {
   const bookEl = document.getElementById('book');
   const measurer = document.createElement('div');
@@ -360,7 +392,9 @@ function paginate(content, settings, bookId = 'book', pin = null) {
   // Якорь-булавка: принудительный разрыв страницы ровно на первой букве
   // якоря — при ЛЮБОЙ вёрстке (шрифт/отступы/режим) эта буква открывает
   // страницу разворота. Всем блокам заранее назначаются стабильные id.
-  const work = applyPinToBlocks(blocks, bookId, pin, single);
+  // Подписи СКЛЕИВАЮТСЯ с картинками ДО булавки — пара неразрывна.
+  const glued = glueImageCaptions(blocks);
+  const work = applyPinToBlocks(glued, bookId, pin, single);
 
   const pages = [];
   const pageBlocks = [];   // метаданные блоков: pageBlocks[i] = [{ blockId, text }]
@@ -453,21 +487,32 @@ function paginate(content, settings, bookId = 'book', pin = null) {
       : 0;
     const effectiveH = currentH - lastMargin;   // занято БЕЗ margin последнего
 
-    // Высота картинки: измерение может дать ТОЛЬКО padding (43px), если
-    // aspect-ratio не подставился (кэш размеров пуст в момент измерения).
-    // В этом случае считаем высоту из кэша размеров; заодно ограничиваем
-    // высоту страницы (CSS max-height сжимает рендер так же).
-    // Ширина картинки = 85% колонки (CSS max-width: 85%) — синхронизировано.
+    // Высота картинки+подписи — ОБРАТНЫЙ РАСЧЁТ (подпись главнее):
+    // 1) СНАЧАЛА меряем ПОДПИСЬ — её размер и положение фиксированы
+    //    (она всегда видна целиком, никогда не обрезается);
+    // 2) ПОТОМ вписываем изображение в ОСТАТОК: imgH = доступно − подпись.
+    // Картинка сжимается под подпись, а не наоборот — раньше картинка
+    // занимала всё поле, а подпись не помещалась и вылезала за грань.
     if (block.type === 'image') {
       const dim = block.src ? imageSizeCache.get(imgCacheKey(bookId, block.src)) : null;
+      const pad = settings.fontSize * 2.4;                  // padding figure
+      // 1. Подпись: меряем её реальную высоту (по всей ширине колонки)
+      let capH = 0;
+      if (block.caption) {
+        measurer.innerHTML = `<span style="display:block;height:0"></span>`
+          + `<figure class="book-image"><figcaption>${escapeHtml(block.caption)}</figcaption></figure>`;
+        capH = measurer.getBoundingClientRect().height;
+      }
+      // 2. Картинка — в ОСТАТОК после подписи (и padding figure)
       if (dim && dim.w && dim.h) {
-        const pad = settings.fontSize * 2.4;                  // padding figure
-        const maxImgH = contentH - pad;
+        const availForImg = contentH - pad - capH;
         const imgW = Math.min(contentW * 0.85, dim.w);       // 85% колонки
-        const imgH = Math.min(imgW * dim.h / dim.w, maxImgH);
-        // Расчётная высота всегда точнее измерения: она учитывает и
-        // схлопывание (кэш был пуст), и ограничение высотой страницы.
-        blockH = imgH + pad;
+        const imgH = Math.max(40, Math.min(imgW * dim.h / dim.w, availForImg));
+        blockH = imgH + capH + pad;
+        // Передаём в CSS точный лимит высоты картинки (рендер сжимает так же)
+        block._imgMaxH = Math.round(imgH);
+      } else {
+        blockH = capH + pad;
       }
     }
 
@@ -572,31 +617,14 @@ function paginate(content, settings, bookId = 'book', pin = null) {
 
     // Блок не влезает в остаток — переносим ЦЕЛИКОМ на следующую страницу
     // (проверка по effectiveH — без margin последнего блока страницы).
-    // ПОДПИСЬ К КАРТИНКЕ не отрываем от неё: если блок — подпись (короткий
-    // абзац сразу после image, начинается с «N.»), а картинка уже на этой
-    // странице, переносим ВМЕСТЕ С КАРТИНКОЙ (снимаем её со страницы).
-    const isCaption = block.type === 'paragraph'
-      && /^\d+\.\s/.test(String(block.text || '').trim())
-      && String(block.text || '').trim().length < 200;
-    const lastOnPage = currentPage[currentPage.length - 1];
-    const captionPair = isCaption && lastOnPage?.type === 'image';
+    // Пары «картинка+подпись» уже СКЛЕЕНЫ в единые блоки (glueImageCaptions)
+    // — переносятся только целиком, отдельной подписи быть не может.
     if (effectiveH + blockH > contentH && currentPage.length > 0) {
-      if (captionPair) {
-        // Снимаем картинку со страницы — пара уйдёт на следующую вместе
-        const img = currentPage.pop();
-        const imgMeta = currentBlocks.pop();
-        pages.push(renderBlocks(currentPage, bookId));
-        pageBlocks.push(currentBlocks);
-        currentPage = [img];
-        currentBlocks = [imgMeta];
-        currentH = 0;   // высоту картинки пересчитает её blockH ниже
-      } else {
-        pages.push(renderBlocks(currentPage, bookId));
-        pageBlocks.push(currentBlocks);
-        currentPage = [];
-        currentBlocks = [];
-        currentH = 0;
-      }
+      pages.push(renderBlocks(currentPage, bookId));
+      pageBlocks.push(currentBlocks);
+      currentPage = [];
+      currentBlocks = [];
+      currentH = 0;
     }
 
     currentPage.push({
@@ -606,10 +634,13 @@ function paginate(content, settings, bookId = 'book', pin = null) {
       blockId,
       src: block.src,     // для картинок из FB2
       noteId: block.noteId, // для блоков-сносок (якорь перехода)
+      caption: block.caption,   // склеенная подпись картинки
+      _imgMaxH: block._imgMaxH, // лимит высоты картинки (обратный расчёт)
       });
     // pageBlocks — метаданные для пост-проверки/якорей: type и cont нужны
-    // для перерендера страницы (renderBlocks) при снятии блока
-    currentBlocks.push({ blockId, text: block.text, type: block.type, level: block.level, src: block.src, noteId: block.noteId, cont: block.cont });
+    // для перерендера страницы (renderBlocks) при снятии блока.
+    // caption — склеенная подпись картинки (для перерендера figure).
+    currentBlocks.push({ blockId, text: block.text, type: block.type, level: block.level, src: block.src, noteId: block.noteId, caption: block.caption, cont: block.cont });
     currentH += blockH;
   }
 

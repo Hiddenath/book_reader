@@ -21,6 +21,34 @@ const COVER_PALETTES = [
   ['#6a3d9a', '#3b1f5e'],
 ];
 
+/* Читает FB2-файл с УЧЁТОМ КОДИРОВКИ. Многие классические FB2 (особенно
+   с royallib и старых библиотек) сохранены в windows-1251 — XML-декларация
+   в первых байтах файла это объявляет: <?xml ... encoding="windows-1251"?>.
+   file.text() всегда читает как UTF-8 → кракозябры во всём тексте.
+   Здесь: читаем сырые байты, находим кодировку в декларации, декодируем
+   через TextDecoder (поддерживает windows-1251, koi8-r, utf-8 и др.).
+   Если кодировка не указана или не поддерживается — UTF-8 (стандарт FB2). */
+async function readFb2WithEncoding(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  // XML-декларация — в первых ~300 байтах; ищем encoding="..."
+  const head = new TextDecoder('utf-8').decode(bytes.subarray(0, 300));
+  const m = head.match(/encoding\s*=\s*["']([\w-]+)["']/i);
+  let enc = 'utf-8';
+  if (m) {
+    const declared = m[1].toLowerCase();
+    // Нормализуем синонимы
+    const aliases = { 'windows-1251': 'windows-1251', 'cp1251': 'windows-1251', 'cp-1251': 'windows-1251', 'koi8-r': 'koi8-r', 'koi8r': 'koi8-r', 'utf-8': 'utf-8', 'utf8': 'utf-8' };
+    enc = aliases[declared] || 'utf-8';
+  }
+  try {
+    return new TextDecoder(enc).decode(bytes);
+  } catch {
+    // Неизвестная кодировка — UTF-8 как фолбэк (стандарт FB2)
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+}
+
 export class Library {
   constructor(onOpenBook) {
     this.el = document.getElementById('library');
@@ -90,14 +118,15 @@ export class Library {
       
       if (format === 'fb2') {
         // FB2: отправляем оригинальный файл на сервер,
-        // сервер сохранит его под исходным именем и извлечёт метаданные
-        const fb2Content = await file.text();
+        // сервер сохранит его под исходным именем и извлечёт метаданные.
+        // Читаем С УЧЁТОМ КОДИРОВКИ из XML-декларации (windows-1251 и др.)
+        const fb2Content = await readFb2WithEncoding(file);
         book = {
           originalName: file.name,   // Исходное имя файла — сервер сохранит его
           title: file.name.replace(/\.fb2$/i, ''),
           author: 'Неизвестный автор',
           format: 'fb2',
-          fb2_content: fb2Content,   // Оригинальный файл
+          fb2_content: fb2Content,   // Оригинальный файл (декодированный)
           progress: 0,
           palette: COVER_PALETTES[this.books.length % COVER_PALETTES.length],
         };

@@ -8,24 +8,24 @@
 
 ## 🎬 Demo
 
-> ⚠️ The media below is large — click to expand (high traffic, ~14 MB total).
+> ⚠️ The media below is large — click to expand (high traffic, ~9 MB total).
 
 <details>
-<summary>▶️ 3D page-flip animation (GIF, ~4.7 MB)</summary>
+<summary>▶️ 3D page-flip animation (GIF, ~3.7 MB)</summary>
 
 ![3D page-flip animation](assets/gif/reader-flip.gif)
 
 </details>
 
 <details>
-<summary>📱 Single-page mode on a phone (GIF, ~2.9 MB)</summary>
+<summary>📱 Single-page mode on a phone (GIF, ~3.2 MB)</summary>
 
 ![Mobile single-page mode](assets/gif/reader-flip-mobile.gif)
 
 </details>
 
 <details>
-<summary>🎨 Themes and settings (GIF, ~6.2 MB)</summary>
+<summary>🎨 Themes and settings (GIF, ~1.6 MB)</summary>
 
 ![Themes and settings](assets/gif/settings-themes.gif)
 
@@ -34,7 +34,7 @@
 ## 📸 Screenshots
 
 <details>
-<summary>🖼️ Show screenshots (13 images, ~8 MB total)</summary>
+<summary>🖼️ Show screenshots (13 images, ~24 MB total)</summary>
 
 |                                                              |                                                            |
 | ------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -137,6 +137,7 @@ Options:
 python3 server.py          # both servers
 python3 server.py --static # static only (8080)
 python3 server.py --api    # API only (8001)
+python3 server.py --quiet   # no request logging
 ```
 
 ## 📁 Project structure
@@ -144,6 +145,7 @@ python3 server.py --api    # API only (8001)
 ```
 book_reader/
 ├── index.html          # Entry point, UI markup
+├── book.svg            # Logo (library header + favicon)
 ├── server.py           # Single server: static + API
 ├── css/
 │   ├── main.css        # Global styles, themes (CSS Custom Properties)
@@ -152,6 +154,8 @@ book_reader/
 ├── js/
 │   ├── main.js         # Initialization, pagination, state, autosave
 │   ├── reader.js       # Reader: flip animation, drag, keyboard, volume keys
+│   ├── narrator.js     # Narrator: speech engines, pacing, stress marks
+│   ├── sounds.js       # Page-flip sounds (random pick from sounds/)
 │   ├── library.js      # Library: cards, import, deletion
 │   ├── bookmarks.js    # Bookmarks (side panel, marker on the book edge)
 │   ├── notes.js        # Footnotes: tooltip, jump to note, "back" button
@@ -161,7 +165,9 @@ book_reader/
 │   └── storage.js      # localStorage + server-side saving
 ├── lib/
 │   ├── epub.js         # epub.js (downloaded, BSD)
-│   └── jszip.min.js    # JSZip — epub.js dependency
+│   ├── jszip.min.js    # JSZip — epub.js dependency
+│   └── stress_dict.json.gz # Russian stress dictionary (3.2M word forms, RUAccent)
+├── sounds/             # Page-flip sounds (MP3/OGG/WAV, picked up automatically)
 ├── assets/             # Screenshots and GIF animations for the README
 ├── books/              # Book catalog (created automatically)
 │   ├── <name>.fb2 / .txt / .epub   # Book file with its original name

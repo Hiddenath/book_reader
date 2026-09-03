@@ -58,7 +58,6 @@ export function buildPositionAnchor(root, viewport) {
 
   return {
     blockId: target.blockId,
-    offsetRatio: 0,
     previewText: target.previewText,
   };
 }
@@ -79,7 +78,7 @@ function normalizeText(text) {
  * исходный абзац имеет один стабильный id, а выбор точной страницы среди
  * страниц абзаца делается по сохранённому тексту закладки (previewText).
  *
- * @param {object} anchor — { blockId, offsetRatio, previewText }
+ * @param {object} anchor — { blockId, previewText }
  * @param {string[]} pages — HTML-строки страниц
  * @param {Array<Array<{blockId:string,text:string}>>} [pageBlocks] — метаданные блоков по страницам
  * @returns {number} индекс страницы или -1

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BookHaven 3D</title>
   <link rel="icon" type="image/svg+xml" href="book.svg">
-    <link rel="stylesheet" href="css/main.css?v=20260831a">
+    <link rel="stylesheet" href="css/main.css?v=20260903c">
     <link rel="stylesheet" href="css/reader.css?v=20260901c">
     <link rel="stylesheet" href="css/library.css?v=20260831a">
 </head>
@@ -42,10 +42,10 @@
       <div class="book-shell" aria-hidden="true"></div>
 
       <!-- Статичные страницы под разворотом -->
-      <div class="page page-under page-left" id="pageUnderLeft">
+      <div class="page page-left">
         <div class="page-content" id="contentUnderLeft"></div>
       </div>
-      <div class="page page-under page-right" id="pageUnderRight">
+      <div class="page page-right">
         <div class="page-content" id="contentUnderRight"></div>
       </div>
 
@@ -136,7 +136,16 @@
             <span class="toggle-thumb"></span>
           </span>
         </label>
-
+        <span class="toggle-label">Анимация</span>
+      </div>
+      <div class="toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="setFlipSound" checked>
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+        </label>
+        <span class="toggle-label">Звук перелистывания</span>
       </div>
     </div>
     <div class="settings-section">
@@ -157,6 +166,6 @@
   <script src="lib/epub.js"></script>
 
   <!-- Точка входа приложения -->
-     <script type="module" src="js/main.js?v=20260901d"></script>
+     <script type="module" src="js/main.js?v=20260903b"></script>
 </body>
 </html>

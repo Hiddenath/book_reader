@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 DATA_FILE = ROOT / 'data' / 'state.json'
 BOOKS_DIR = ROOT / 'books'
+SOUNDS_DIR = ROOT / 'sounds'
 
 # Максимальный размер тела запроса (байт). Книга целиком (FB2 ~5-10 МБ)
 # вписывается в лимит с запасом; всё, что больше, — отвергаем, чтобы
@@ -33,6 +34,9 @@ MAX_BODY_BYTES = 64 * 1024 * 1024
 
 # Разрешённые расширения файлов книг (точка в нижнем регистре)
 BOOK_EXTS = ('.fb2', '.txt', '.epub')
+
+# Разрешённые расширения звуковых файлов перелистывания
+SOUND_EXTS = ('.mp3', '.ogg', '.wav', '.m4a', '.aac')
 
 QUIET = False  # --quiet отключает логирование
 
@@ -488,6 +492,8 @@ class APIHandler(BaseHTTPRequestHandler):
         
         if self.path == '/books':
             self._list_books()
+        elif self.path == '/sounds':
+            self._list_sounds()
         elif self.path.startswith('/books/') and self.path.endswith('/text'):
             book_id = unquote(self.path.split('/')[-2])
             self._get_book_text(book_id)
@@ -542,11 +548,21 @@ class APIHandler(BaseHTTPRequestHandler):
         else:
             self._send_json({'error': 'Not found'}, status=404)
 
+    def _list_sounds(self):
+        """Список звуковых файлов перелистывания из папки sounds/.
+        Фронтенд выбирает из них случайный при каждом флипе — новые файлы
+        подхватываются автоматически, без правок кода."""
+        names = []
+        if SOUNDS_DIR.is_dir():
+            for item in sorted(SOUNDS_DIR.iterdir()):
+                if item.is_file() and item.suffix.lower() in SOUND_EXTS:
+                    names.append(item.name)
+        self._send_json({'sounds': names})
+
     def _list_books(self):
         """Возвращает список книг из папки books/ (без текста — только метаданные)."""
         ensure_books_dir()
         books = []
-        BOOK_EXTS = ('.fb2', '.txt', '.epub')
 
         for item in sorted(BOOKS_DIR.iterdir()):
             if not item.is_file() or item.suffix.lower() not in BOOK_EXTS:
@@ -965,9 +981,9 @@ class StaticHandler(SimpleHTTPRequestHandler):
     """
 
     # Префиксы путей, которые можно отдавать наружу
-    PUBLIC_PREFIXES = ('css/', 'js/', 'lib/', 'assets/')
+    PUBLIC_PREFIXES = ('css/', 'js/', 'lib/', 'assets/', 'sounds/')
     # Точечные файлы в корне, которые можно отдавать
-    PUBLIC_ROOT_FILES = {'index.html', 'book.svg', 'page-flip-sound.mp3', 'favicon.ico'}
+    PUBLIC_ROOT_FILES = {'index.html', 'book.svg', 'favicon.ico'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -992,7 +1008,7 @@ class StaticHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         # Кэширование для статики
-        if self.path.endswith(('.css', '.js', '.woff2', '.png', '.jpg')):
+        if self.path.endswith(('.css', '.js', '.woff2', '.png', '.jpg', '.mp3', '.ogg', '.wav', '.m4a')):
             self.send_header('Cache-Control', 'public, max-age=3600')
         else:
             self.send_header('Cache-Control', 'no-cache')

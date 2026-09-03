@@ -1,12 +1,13 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
-import { Reader } from './reader.js?v=20260831b';
+import { Reader } from './reader.js?v=20260903c';
 import { Library } from './library.js?v=20260822a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
 import { Notes } from './notes.js?v=20260827b';
 import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, loadBookMeta, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260830b';
-import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260830a';
+import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260903a';
+import { pageSounds } from './sounds.js?v=20260903a';
 
 // API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
 const API_PORT = 8001;
@@ -56,9 +57,25 @@ const State = {
     vmargins: 50,
     theme: 'paper',
     pageFlipAnimation: true,
+    flipSound: true,
     hyphenation: true,
   },
 };
+
+/* Ключи настроек, которые реально существуют. В старых сохранённых
+   состояниях (state.json / localStorage) могут лежать ключи удалённых
+   фич (denseText, sound, bookScale, …) — их отбрасываем, чтобы
+   «хвосты» не кочевали из снапшота в снапшот. */
+const SETTING_KEYS = Object.keys(State.settings);
+
+/** Оставляет в настройках только известные ключи. */
+function sanitizeSettings(raw) {
+  const out = {};
+  for (const key of SETTING_KEYS) {
+    if (raw && key in raw) out[key] = raw[key];
+  }
+  return out;
+}
 
 /* ---------- Демо-текст ---------- */
 
@@ -880,6 +897,8 @@ function syncSettingsUI() {
   }
   if (flip) flip.checked = s.pageFlipAnimation !== false;
   if (hyph) hyph.checked = s.hyphenation !== false;
+  const snd = document.getElementById('setFlipSound');
+  if (snd) snd.checked = s.flipSound !== false;
 }
 
 function getPageCacheKey(book, settings) {
@@ -977,7 +996,7 @@ function persist(library) {
       // актуальное состояние с сервера и применяем его настройки.
       knownUpdatedAt = result.state.updatedAt ?? knownUpdatedAt;
       if (result.state.settings) {
-        Object.assign(State.settings, result.state.settings);
+        Object.assign(State.settings, sanitizeSettings(result.state.settings));
         applyVisualSettings();
         syncSettingsUI();
       }
@@ -1106,7 +1125,7 @@ async function init() {
   const saved = loadState();
   const serverState = await loadStateFromServer();
   const initialState = serverState ?? saved;
-  if (initialState?.settings) Object.assign(State.settings, initialState.settings);
+  if (initialState?.settings) Object.assign(State.settings, sanitizeSettings(initialState.settings));
   knownUpdatedAt = initialState?.updatedAt ?? 0;
 
   // Синхронизируем ВСЕ контролы настроек с восстановленными значениями
@@ -1120,6 +1139,12 @@ async function init() {
     flipToggle.checked = State.settings.pageFlipAnimation;
     reader.setPageFlipAnimation(State.settings.pageFlipAnimation);
   }
+
+  // Звук перелистывания: список файлов подтягивается с сервера (GET /sounds),
+  // случайный звук играет при каждом реальном перелистывании
+  pageSounds.setEnabled(State.settings.flipSound !== false);
+  pageSounds.init();
+  reader.onFlip = () => pageSounds.play();
 
   // Переключатель переноса слов
   const hyphToggle = document.getElementById('setHyphenation');
@@ -1374,6 +1399,16 @@ async function init() {
     });
   }
 
+  // Переключатель звука перелистывания
+  const soundToggle = document.getElementById('setFlipSound');
+  if (soundToggle) {
+    soundToggle.addEventListener('change', () => {
+      State.settings.flipSound = soundToggle.checked;
+      pageSounds.setEnabled(soundToggle.checked);
+      schedulePersist(library);
+    });
+  }
+
   // Режим погружения: клик по центру
   document.getElementById('scene').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -1449,7 +1484,7 @@ async function init() {
       const fresh = await loadStateFromServer();
       if (fresh?.settings && (fresh.updatedAt ?? 0) > knownUpdatedAt) {
         knownUpdatedAt = fresh.updatedAt;
-        Object.assign(State.settings, fresh.settings);
+        Object.assign(State.settings, sanitizeSettings(fresh.settings));
         applyVisualSettings();
         syncSettingsUI();
         // Восстановление по якорю-булавке. restoringPosition блокирует

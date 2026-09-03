@@ -20,6 +20,7 @@ export class Reader {
     this.isAnimating = false;
     this.isDragging = false;
     this.pageFlipAnimation = true; // включена ли анимация перелистывания
+    this.onFlip = null;            // callback звука перелистывания (звук/выкл)
     this.castLeft = this._makeCastShadow('on-left');
     this.castRight = this._makeCastShadow('on-right');
 
@@ -71,6 +72,7 @@ export class Reader {
     if (!this.pageFlipAnimation) {
       this.currentSpread += step;
       this._renderSpread();
+      this.onFlip?.(); // звук перелистывания (без анимации)
       return;
     }
     this._flip('forward');
@@ -82,6 +84,7 @@ export class Reader {
     if (!this.pageFlipAnimation) {
       this.currentSpread -= step;
       this._renderSpread();
+      this.onFlip?.(); // звук перелистывания (без анимации)
       return;
     }
     this._flip('backward');
@@ -238,6 +241,9 @@ export class Reader {
       return { sheet, applyAngle };
     }
 
+    // Звук — ВМЕСТЕ со стартом движения листа: пик шуршания в файле
+    // приходится на середину поворота (375 мс из 750 мс)
+    this.onFlip?.();
     this.isAnimating = true;
     const start = performance.now();
 
@@ -304,6 +310,8 @@ export class Reader {
       return { sheet, applyAngle };
     }
 
+    // Звук — вместе со стартом движения листа (как в двухстраничном режиме)
+    this.onFlip?.();
     this.isAnimating = true;
     const start = performance.now();
 
@@ -404,6 +412,7 @@ export class Reader {
           this.castRight.style.opacity = 0;
           this.currentSpread += forward ? step : -step;
           this._renderSpread();
+          this.onFlip?.(); // звук перелистывания
           return;
         }
         // Доводка: листок продолжает движение от ТЕКУЩЕГО угла до конца —
@@ -438,6 +447,8 @@ export class Reader {
     const shadeFront = sheet.querySelector('.flip-shade-front');
     const shadeBack = sheet.querySelector('.flip-shade-back');
 
+    // Звук — вместе с доводкой листа (drag завершился переворотом)
+    this.onFlip?.();
     this.isAnimating = true;
     const start = performance.now();
     // Длительность пропорциональна остатку пути; минимум — короткий «доход»

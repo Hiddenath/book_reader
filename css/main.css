@@ -401,7 +401,10 @@ button {
   margin-bottom: 12px;
 }
 
-.settings-section label {
+/* Не касается тумблеров (.toggle-switch): им нужен inline-flex без
+   отступов, иначе переключатель «приподнимается» над подписью
+   (margin-bottom центрируется вместе с блоком и смещает его вверх). */
+.settings-section label:not(.toggle-switch) {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -415,6 +418,23 @@ button {
 }
 
 /* ===== macOS-style переключатель ===== */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.toggle-row + .toggle-row {
+  margin-top: 10px;
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: var(--text);
+  user-select: none;
+}
+
 .toggle-switch {
   position: relative;
   display: inline-flex;

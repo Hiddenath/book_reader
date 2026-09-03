@@ -7,7 +7,7 @@
  * Парсер EPUB через epub.js (загружается из /lib/).
  * Возвращает Promise с текстом книги.
  */
-export async function parseEPUB(arrayBuffer) {
+async function parseEPUB(arrayBuffer) {
   if (typeof ePub === 'undefined') {
     throw new Error('epub.js не загружен');
   }

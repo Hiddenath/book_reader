@@ -61,6 +61,22 @@
 - 📄 **Dynamic layout** — text is split into pages according to screen size, font and margins
 - 📍 **Position saving** — reopening a book returns you to where you left off (anchored to text, not page numbers)
 
+### Narrator (read aloud)
+
+- 🗣️ **Text-to-speech** — the narrator reads the book aloud using the built-in browser voices (Web Speech API, works offline)
+- 📖 **Reads both pages** of the spread, then flips the page with animation and sound — just like manual reading
+- 🎚️ **Stress marks** — a 3.2M-word Russian stress dictionary (RUAccent) marks the stressed vowel of every word, so the voice puts accents correctly («за́мок», not «замо́к»)
+- 🎭 **Human-like pacing** — separate pauses after sentences, paragraphs, chapter titles and poem stanzas; headings are read slower, like an announcer
+- 🧹 **Clean speech** — quotes and markup symbols are not read aloud, dashes become natural pauses
+- ⏯️ **One button** — the FAB button starts/stops narration when a book is open (in the library it still adds books)
+- 📄 **Auto-flip toggle** — optionally stop at the end of each page instead of turning automatically
+
+### Page-flip sounds
+
+- 🔊 **Paper rustle** on every page flip — a random sound from the `sounds/` folder (no repeats in a row)
+- ➕ **Drop-in sounds** — add more MP3/OGG/WAV files into `sounds/`, they are picked up automatically, no code changes
+- 🔈 **Toggle in settings** — sound can be turned off alongside the animation toggle
+
 ### Library
 
 - 📚 **Card grid** with covers, title, author and reading progress
@@ -82,8 +98,11 @@
 ### Settings
 
 - 🔤 **Font size**, line height, horizontal & vertical margins
-- 🎨 **5 themes**: Paper, Sepia, Night, Forest, Sky
+- 🎨 **7 themes**: Paper, Sepia, Night, Forest, Sky, Ember (OLED), Amber (OLED)
 - 🌙 **Immersive mode** — clicking the center hides all panels
+- 🔤 **Hyphenation** toggle
+- 🎞️ **Page-flip animation** and **flip sound** toggles
+- 📄 **Auto-flip during narration** toggle
 
 ## 📱 Phone controls
 
@@ -179,12 +198,16 @@ Books are stored as **plain files** in `books/` — the original filename is kep
 | `GET`    | `/books/<id>/cover`        | Book cover (from FB2`<coverpage>`)       |
 | `GET`    | `/books/<id>/image/<name>` | Image from the book body (FB2`<binary>`) |
 | `DELETE` | `/books/<id>`              | Delete a book                              |
+| `GET`    | `/sounds`                  | List of page-flip sound files              |
+| `POST`   | `/tts/stress`               | Mark up text with stress accents (U+0301) for the narrator |
 
 ## 📋 Tech stack
 
 - **Frontend**: vanilla ES2022 JavaScript, CSS3 Custom Properties, CSS 3D transforms
 - **Backend**: Python `http.server` (no dependencies)
 - **Libraries**: epub.js + JSZip (bundled in `/lib/`)
+- **TTS**: Web Speech API (browser voices) + RUAccent stress dictionary (3.2M word forms)
+- **Icons**: inline SVG (Material Design paths)
 
 ## 📄 License
 

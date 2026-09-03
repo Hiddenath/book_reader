@@ -30,19 +30,16 @@
   gap: 14px;
 }
 
-/* Иконка-логотип (book.svg) */
+/* Иконка-логотип (book.svg): кожаная обложка с кремовыми страницами —
+   отлично видна и на светлом, и на тёмном фоне, инверсия не нужна */
 .library-logo {
-  height: 42px;
+  height: 43px;
   width: auto;
   flex-shrink: 0;
 }
 
-/* Ночная тема: иконка тёмная (#1b2938) — инвертируем для контраста */
-[data-theme="night"] .library-logo,
-[data-theme="ember"] .library-logo,
-[data-theme="amber"] .library-logo {
-  filter: invert(0.92);
-}
+/* Иконка-логотип (book.svg): кожаная обложка с кремовыми страницами —
+   отлично видна и на светлом, и на тёмном фоне, инверсия не нужна */
 
 .library-title {
   font-family: var(--font-serif);
@@ -83,8 +80,6 @@
   border-radius: 50%;
   background: var(--accent);
   color: white;
-  font-size: 18px;
-  line-height: 1;
   display: grid;
   place-items: center;
   opacity: 0;
@@ -92,6 +87,13 @@
   transition: opacity 0.2s, transform 0.2s;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   z-index: 10;
+}
+
+.book-delete svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  display: block;
 }
 
 .book-card:hover .book-delete {
@@ -184,17 +186,37 @@
   border: none;
   background: var(--accent);
   color: #fff;
-  font-size: 30px;
-  line-height: 1;
+  /* SVG-иконка центрируется grid'ом — геометрически идеально,
+     без метрик шрифта (глифы ▶/■/+ в каждом шрифте смещены) */
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
   box-shadow: 0 8px 24px var(--shadow-book);
   transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
   z-index: 50;
 }
 
+.fab svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+  display: block;
+}
+
 .fab:hover {
   transform: scale(1.08);
   box-shadow: 0 12px 32px var(--shadow-book);
+}
+
+/* FAB в режиме диктора: пульсация, пока идёт чтение */
+.fab.narrating {
+  animation: fab-pulse 2s ease-in-out infinite;
+}
+
+@keyframes fab-pulse {
+  0%, 100% { box-shadow: 0 8px 24px var(--shadow-book), 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 8px 24px var(--shadow-book), 0 0 0 14px transparent; }
 }
 
 /* --- Drag&drop оверлей --- */
@@ -223,5 +245,6 @@
 @media (max-width: 768px) {
   .library { padding: 60px 5vw 100px; }
   .book-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 20px 16px; }
-  .fab { right: 20px; bottom: 20px; width: 52px; height: 52px; font-size: 26px; }
+  .fab { right: 20px; bottom: 20px; width: 52px; height: 52px; }
+  .fab svg { width: 24px; height: 24px; }
 }

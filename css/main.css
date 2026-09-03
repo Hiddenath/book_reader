@@ -243,6 +243,13 @@ button {
   transition: background 0.2s, transform 0.2s;
 }
 
+.tb-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  display: block;
+}
+
 .tb-btn:hover {
   background: var(--shadow-page);
   transform: scale(1.08);
@@ -380,9 +387,15 @@ button {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 22px;
   color: var(--text-dim);
   transition: background 0.2s, transform 0.2s;
+}
+
+.settings-close svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  display: block;
 }
 
 .settings-close:hover {

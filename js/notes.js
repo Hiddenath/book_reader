@@ -59,7 +59,9 @@ export class Notes {
   _createBackButton() {
     this.backBtn = document.createElement('button');
     this.backBtn.className = 'note-back-btn';
-    this.backBtn.innerHTML = '← Назад к тексту';
+    this.backBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      <span>Назад к тексту</span>`;
     this.backBtn.title = 'Вернуться к месту чтения';
     this.backBtn.addEventListener('click', (e) => {
       e.stopPropagation();

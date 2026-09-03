@@ -1,13 +1,14 @@
 /* ===== BookHaven 3D — инициализация, состояние, демо-контент ===== */
 
 import { Reader } from './reader.js?v=20260903c';
-import { Library } from './library.js?v=20260822a';
+import { Library } from './library.js?v=20260903a';
 import { Bookmarks } from './bookmarks.js?v=20260806d';
 import { TOC } from './toc.js?v=20260806d';
 import { Notes } from './notes.js?v=20260827b';
 import { loadState, loadStateFromServer, loadBooksFromServer, loadBookText, loadBookMeta, saveBookToServer, saveBookMeta, persistSnapshot, debouncedSave, saveState } from './storage.js?v=20260830b';
 import { buildPositionAnchor, resolveAnchorPage } from './position.js?v=20260903a';
 import { pageSounds } from './sounds.js?v=20260903a';
+import { narrator } from './narrator.js?v=20260903c';
 
 // API-сервер (для загрузки картинок из FB2: обложки и иллюстраций в тексте)
 const API_PORT = 8001;
@@ -43,6 +44,21 @@ function preloadBookImages(blocks, bookId) {
   return Promise.all(tasks);
 }
 
+/* SVG-иконки FAB: крест (добавить), стрелка (плей), квадрат (стоп).
+   Геометрия путей симметрична — иконки идеально по центру круга. */
+const FAB_ICONS = {
+  add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  play: 'M8 5v14l11-7z',
+  stop: 'M6 6h12v12H6z',
+};
+
+function setFabIcon(name) {
+  const fab = document.getElementById('fabAdd');
+  if (!fab) return;
+  const path = fab.querySelector('svg path');
+  if (path) path.setAttribute('d', FAB_ICONS[name] || FAB_ICONS.add);
+}
+
 const State = {
   currentBook: null,
   lastOpenedBookId: null,
@@ -58,6 +74,7 @@ const State = {
     theme: 'paper',
     pageFlipAnimation: true,
     flipSound: true,
+    narratorAutoFlip: true,
     hyphenation: true,
   },
 };
@@ -899,6 +916,8 @@ function syncSettingsUI() {
   if (hyph) hyph.checked = s.hyphenation !== false;
   const snd = document.getElementById('setFlipSound');
   if (snd) snd.checked = s.flipSound !== false;
+  const nf = document.getElementById('setNarratorAutoFlip');
+  if (nf) nf.checked = s.narratorAutoFlip !== false;
 }
 
 function getPageCacheKey(book, settings) {
@@ -1163,6 +1182,12 @@ async function init() {
     State.currentBook = book;
     State.lastOpenedBookId = book.id;
     library.close();
+    // Книга открыта — FAB сразу становится стрелкой диктора (▶)
+    const fabOpen = document.getElementById('fabAdd');
+    if (fabOpen) {
+      setFabIcon('play');
+      fabOpen.title = 'Читать вслух';
+    }
     bookmarks.setBook(book);
     bookmarks.close();
     State.toc.close();
@@ -1318,13 +1343,65 @@ async function init() {
     }
   };
 
-  // Кнопка «Библиотека» в тулбаре
+  // Кнопка «Библиотека» в тулбаре: при уходе в библиотеку глушим диктора
+  // и обновляем иконку FAB (+ в библиотеке / ▶ при открытой книге)
   document.getElementById('btnLibrary').addEventListener('click', () => {
+    if (narrator.enabled) narrator.stop();
     if (library.isOpen) library.close(); else library.open();
+    updateFabIcon();
   });
+
+  // Диктор: FAB «+» в библиотеке = добавить книгу, при открытой книге —
+  // включает/выключает чтение вслух (иконка меняется на ▶/■).
+  // ВАЖНО: этот блок после создания library — колбэки ссылаются на неё.
+  narrator.autoFlip = State.settings.narratorAutoFlip !== false;
+  narrator.getPages = () => reader.pages;
+  narrator.getCurrentPage = () => reader.currentSpread;
+  narrator.isSinglePage = () => reader.singlePage;
+  narrator.goToPage = (idx) => reader.goTo(idx);
+  narrator.nextPage = () => {
+    // next() сам играет анимацию и звук перелистывания
+    const step = reader.singlePage ? 1 : 2;
+    if (reader.currentSpread + step >= reader.pages.length) return false;
+    reader.next();
+    return true;
+  };
+  // Стартовое состояние иконки — ВАЖНО: после library.open() ниже,
+  // иначе isOpen ещё false и FAB получит стрелку вместо крестика.
+  // Инициализацию делает функция updateFabIcon (учитывает состояние
+  // библиотеки и диктора), вызываемая после открытия библиотеки.
+  const updateFabIcon = () => {
+    const fab = document.getElementById('fabAdd');
+    if (!fab) return;
+    if (narrator.enabled) {
+      setFabIcon('stop');                  // квадрат = стоп
+      fab.title = 'Остановить чтение';
+      fab.classList.add('narrating');
+    } else {
+      setFabIcon(library.isOpen ? 'add' : 'play');
+      fab.title = library.isOpen ? 'Добавить книгу' : 'Читать вслух';
+      fab.classList.remove('narrating');
+    }
+  };
+  narrator.onStateChange = updateFabIcon;
+
+  // Логика кнопки FAB по состоянию:
+  // - библиотека открыта → добавить книгу (обрабатывает library.js)
+  // - книга открыта, чтение не идёт → начать чтение (▶)
+  // - чтение идёт → полная остановка (■)
+  window.__narratorFabAction = () => {
+    if (library.isOpen) return false;   // false = «не диктор», library.js сам добавит книгу
+    if (!State.currentBook) return false;
+    if (!narrator.enabled) {
+      narrator.start();
+    } else {
+      narrator.stop();
+    }
+  };
 
   // Стартовый экран — библиотека
   library.open();
+  updateFabIcon();   // крестик «+» сразу при старте
   requestAnimationFrame(() => {
     applyVisualSettings();
     reader.setPages([], true);
@@ -1405,6 +1482,16 @@ async function init() {
     soundToggle.addEventListener('change', () => {
       State.settings.flipSound = soundToggle.checked;
       pageSounds.setEnabled(soundToggle.checked);
+      schedulePersist(library);
+    });
+  }
+
+  // Переключатель автоперелистывания диктора
+  const narratorFlipToggle = document.getElementById('setNarratorAutoFlip');
+  if (narratorFlipToggle) {
+    narratorFlipToggle.addEventListener('change', () => {
+      State.settings.narratorAutoFlip = narratorFlipToggle.checked;
+      narrator.autoFlip = narratorFlipToggle.checked;
       schedulePersist(library);
     });
   }

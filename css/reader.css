@@ -496,7 +496,6 @@ body.immersive .settings-panel {
 }
 
 .bookmarks-close {
-  font-size: 24px;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -504,6 +503,13 @@ body.immersive .settings-panel {
   place-items: center;
   color: var(--text-dim);
   transition: background 0.2s;
+}
+
+.bookmarks-close svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  display: block;
 }
 
 .bookmarks-close:hover { background: var(--shadow-page); }
@@ -574,7 +580,6 @@ body.immersive .settings-panel {
 }
 
 .bookmark-del {
-  font-size: 18px;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -582,6 +587,13 @@ body.immersive .settings-panel {
   place-items: center;
   color: var(--text-dim);
   transition: background 0.2s, color 0.2s;
+}
+
+.bookmark-del svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  display: block;
 }
 
 .bookmark-del:hover {
@@ -597,7 +609,18 @@ body.immersive .settings-panel {
   color: #fff;
   font-size: 14px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   transition: transform 0.2s var(--ease-out), box-shadow 0.2s;
+}
+
+.bookmarks-add svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  display: block;
 }
 
 .bookmarks-add:hover {
@@ -733,6 +756,16 @@ body.immersive .settings-panel {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-back-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  display: block;
 }
 
 .note-back-btn.visible {

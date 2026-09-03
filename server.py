@@ -26,6 +26,7 @@ ROOT = Path(__file__).parent
 DATA_FILE = ROOT / 'data' / 'state.json'
 BOOKS_DIR = ROOT / 'books'
 SOUNDS_DIR = ROOT / 'sounds'
+STRESS_DICT_FILE = ROOT / 'lib' / 'stress_dict.json.gz'
 
 # Максимальный размер тела запроса (байт). Книга целиком (FB2 ~5-10 МБ)
 # вписывается в лимит с запасом; всё, что больше, — отвергаем, чтобы
@@ -37,6 +38,30 @@ BOOK_EXTS = ('.fb2', '.txt', '.epub')
 
 # Разрешённые расширения звуковых файлов перелистывания
 SOUND_EXTS = ('.mp3', '.ogg', '.wav', '.m4a', '.aac')
+
+# ---------- Словарь ударений (для диктора) ----------
+# Загружается лениво при первом запросе /tts/stress.
+# Формат: слово -> слово с '+' после ударной гласной («зам+ок»).
+_STRESS = {'dict': None, 'loaded': False}
+
+
+def load_stress_dict():
+    """Загружает словарь ударений из lib/stress_dict.json.gz (один раз)."""
+    if _STRESS['loaded']:
+        return _STRESS['dict']
+    _STRESS['loaded'] = True
+    if not STRESS_DICT_FILE.exists():
+        log(f'Словарь ударений не найден: {STRESS_DICT_FILE}')
+        return None
+    import gzip
+    try:
+        with gzip.open(STRESS_DICT_FILE, 'rt', encoding='utf-8') as f:
+            data = json.load(f)
+        _STRESS['dict'] = data.get('accents', {})
+        log(f"Словарь ударений загружен: {len(_STRESS['dict'])} словоформ")
+    except Exception as e:
+        log(f'Ошибка загрузки словаря ударений: {e}')
+    return _STRESS['dict']
 
 QUIET = False  # --quiet отключает логирование
 
@@ -517,6 +542,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
         if self.path == '/books':
             self._save_book()
+        elif self.path == '/tts/stress':
+            self._tts_stress()
         elif self.path.startswith('/books/') and self.path.endswith('/meta'):
             book_id = unquote(self.path.split('/')[-2])
             self._update_book_meta(book_id)
@@ -547,6 +574,58 @@ class APIHandler(BaseHTTPRequestHandler):
             self._delete_book(book_id)
         else:
             self._send_json({'error': 'Not found'}, status=404)
+
+    def _tts_stress(self):
+        """Размечает текст ударениями для диктора.
+
+        POST { text } -> { text: 'слова с + после ударной гласной' }
+        Словарь: слово -> 'зам+ок'. Плюс после гласной превращается
+        в комбинируемый акут (U+0301) — голос macOS/Google читает
+        ударение правильно. Слова не из словаря — без разметки."""
+        payload, err = self._read_json_body()
+        if err:
+            self._send_json(err, status=400)
+            return
+        text = (payload or {}).get('text', '')
+        if not text or not isinstance(text, str):
+            self._send_json({'text': ''})
+            return
+
+        accents = load_stress_dict()
+        if not accents:
+            self._send_json({'text': text})
+            return
+
+        import re
+        vowels = 'аеёиоуыэюя'
+
+        def stress_word(m):
+            word = m.group(0)
+            lower = word.lower()
+            stressed = accents.get(lower)
+            if not stressed or '+' not in stressed:
+                return word
+            # Формат словаря: '+' стоит ПЕРЕД ударной гласной («з+амок»).
+            # Переносим на исходное слово с сохранением регистра.
+            # Длина может отличаться (ё→е и пр.) — идём по гласным.
+            src_v = [i for i, c in enumerate(word) if c.lower() in vowels]
+            dst_v = [i for i, c in enumerate(stressed) if c in vowels]
+            if len(src_v) != len(dst_v):
+                return word
+            # Ударная гласная в stressed — первая гласная ПОСЛЕ '+'
+            plus_pos = stressed.index('+')
+            accent_idx = None
+            for k, i in enumerate(dst_v):
+                if i > plus_pos:
+                    accent_idx = k
+                    break
+            if accent_idx is None or accent_idx >= len(src_v):
+                return word
+            pos = src_v[accent_idx]
+            return word[:pos + 1] + '\u0301' + word[pos + 1:]
+
+        result = re.sub(r'[А-Яа-яЁё]+', stress_word, text)
+        self._send_json({'text': result})
 
     def _list_sounds(self):
         """Список звуковых файлов перелистывания из папки sounds/.

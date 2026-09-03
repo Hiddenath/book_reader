@@ -62,7 +62,15 @@ export class Library {
     const overlay = document.getElementById('dropOverlay');
 
     if (fabAdd && fileInput) {
-      fabAdd.addEventListener('click', () => fileInput.click());
+      fabAdd.addEventListener('click', () => {
+        // Книга открыта: FAB управляет диктором, а не добавлением книг.
+        // Библиотека открыта → классическое добавление книги.
+        // __narratorFabAction возвращает false, если это не режим диктора.
+        if (typeof window.__narratorFabAction === 'function') {
+          if (window.__narratorFabAction() !== false) return;
+        }
+        fileInput.click();
+      });
       fileInput.addEventListener('change', (e) => {
         for (const f of e.target.files || []) this._importFile(f);
         e.target.value = '';
@@ -221,10 +229,13 @@ export class Library {
           <div class="book-meta-title">${title}</div>
           <div class="book-meta-progress">${progressText}</div>
         </div>
-        <button class="book-delete" title="Удалить книгу">×</button>`;
+        <button class="book-delete" title="Удалить книгу">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>`;
 
       card.addEventListener('click', (e) => {
-        if (e.target.classList.contains('book-delete')) return;
+        // closest: клик может прийти по SVG-иконке внутри кнопки удаления
+        if (e.target.closest('.book-delete')) return;
         this.onOpenBook?.(book);
       });
 

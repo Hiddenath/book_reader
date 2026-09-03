@@ -135,6 +135,22 @@ def record_gif(out, duration=6, width=W, height=H, actions=None):
         cdp.call('Runtime.enable')
         time.sleep(0.5)
 
+        # ЕДИНООБРАЗИЕ ГАММЫ: все GIF начинаются с темы paper.
+        # Прошлый прогон settings-themes.gif переключал тему на sky и
+        # СОХРАНЯЛ её на сервер — следующие GIF грузили sky с сервера
+        # и получались в другой гамме. Принудительно ставим paper
+        # (и в DOM, и в localStorage, чтобы не «откатилось»).
+        cdp.call('Runtime.evaluate', {
+            'expression': (
+                "document.documentElement.dataset.theme='paper';"
+                "try{const s=JSON.parse(localStorage.getItem('bookhaven3d')||'{}');"
+                "s.settings=s.settings||{};s.settings.theme='paper';"
+                "localStorage.setItem('bookhaven3d',JSON.stringify(s));}catch(e){}"
+            ),
+            'awaitPromise': False,
+        })
+        time.sleep(0.3)
+
         frames_dir = tempfile.mkdtemp(prefix='bh-frames-')
         frame_count = [0]
 
@@ -521,7 +537,10 @@ def take_gifs():
     else:
         log('  ✗ reader-flip-mobile.gif')
 
-    # 3. Темы и настройки: открываем панель, листаем темы
+    # 3. Темы и настройки: открываем панель, листаем темы.
+    #    Снимается ПОСЛЕДНИМ: переключение тем сохраняется на сервер,
+    #    и следующие GIF-записи подхватили бы чужую тему.
+    #    В конце возвращаем paper, чтобы сервер остался в дефолте.
     total += 1
     if record_gif(
         os.path.join(GIF_DIR, 'settings-themes.gif'),
@@ -532,6 +551,9 @@ def take_gifs():
             (7.0, "[...document.querySelectorAll('.theme-dot')][1].click()"),
             (9.0, "[...document.querySelectorAll('.theme-dot')][2].click()"),
             (11.0, "[...document.querySelectorAll('.theme-dot')][4].click()"),
+            # Возвращаем paper КЛИКОМ по первой точке — так State.settings
+            # обновится и persist сохранит на сервер дефолтную тему
+            (11.8, "[...document.querySelectorAll('.theme-dot')][0].click()"),
         ],
     ):
         log('  ✓ settings-themes.gif')

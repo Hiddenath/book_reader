@@ -4,6 +4,8 @@
 
 > 🇷🇺 [Русская версия](README.ru.md)
 >
+> 🐳 **Docker**: [`hiddenath/bookhaven`](https://hub.docker.com/r/hiddenath/bookhaven) — one command to run
+>
 > 🌐 **Live demo**: [129.151.144.75:8080](http://129.151.144.75:8080/)
 
 ## 🎬 Demo
